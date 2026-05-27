@@ -115,10 +115,10 @@ while true; do
   printf "[nsx-cli][%s@%s]\$ " "${USER_LABEL}" "${TARGET_LABEL}"
   IFS= read -r CMD || break
   case "${CMD,,}" in
-    exit|quit)    echo "Closing session."; break ;;
-    nodes|nos)    echo "  Nodes: ${TARGET_IPS[*]}"; continue ;;
-    history|historico) tail -n 60 "${HISTORY_FILE}" 2>/dev/null || echo "  empty."; continue ;;
-    "")           continue ;;
+    exit|quit) echo "Closing session."; break ;;
+    nodes)     echo "  Nodes: ${TARGET_IPS[*]}"; continue ;;
+    history)   tail -n 60 "${HISTORY_FILE}" 2>/dev/null || echo "  empty."; continue ;;
+    "")        continue ;;
   esac
   exec_on_targets "${CMD}"
 done

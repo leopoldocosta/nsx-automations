@@ -25,7 +25,7 @@ log_banner "PRE-CHECK -- Support Bundle state"
 CLEAN_ALL=false
 [[ "${1:-}" == "--clean-all" ]] && { CLEAN_ALL=true; log "=== CLEAN-ALL: removing ALL existing bundles ==="; }
 
-declare -A PC_STATUS PC_ACAO PC_FILE PC_SKIP PC_DURACAO
+declare -A PC_STATUS PC_ACTION PC_FILE PC_SKIP PC_DURATION
 
 for ip in "${HOST_IPS[@]}"; do
   log "${ip}: PRE-CHECK..."
@@ -53,8 +53,8 @@ for ip in "${HOST_IPS[@]}"; do
       log_warn "${ip}: deleted -- ${f}"
     done
     disable_root_ssh "$ip"
-    PC_STATUS["$ip"]="CLEANED"; PC_ACAO["$ip"]="CLEANED"
-    PC_FILE["$ip"]="--"; PC_SKIP["$ip"]="false"; PC_DURACAO["$ip"]="--"
+    PC_STATUS["$ip"]="CLEANED"; PC_ACTION["$ip"]="CLEANED"
+    PC_FILE["$ip"]="--"; PC_SKIP["$ip"]="false"; PC_DURATION["$ip"]="--"
     continue
   fi
 
@@ -62,12 +62,12 @@ for ip in "${HOST_IPS[@]}"; do
   # Copy them into the per-host associative arrays.
   precheck_bundle_for "$ip"
   PC_STATUS["$ip"]="${PCR_STATUS}"
-  PC_ACAO["$ip"]="${PCR_ACAO}"
+  PC_ACTION["$ip"]="${PCR_ACTION}"
   PC_FILE["$ip"]="${PCR_FILE}"
   PC_SKIP["$ip"]="${PCR_SKIP}"
-  PC_DURACAO["$ip"]="${PCR_DURACAO}"
+  PC_DURATION["$ip"]="${PCR_DURATION}"
 
-  case "${PCR_ACAO}" in
+  case "${PCR_ACTION}" in
     OK)       log_ok   "${ip}: recent bundle present." ;;
     GENERATE) if [[ "${PCR_TOTAL}" -gt 0 ]]; then
                 log_warn "${ip}: only old bundle(s)."
@@ -84,8 +84,8 @@ precheck_csv="${LOG_DIR}/precheck_$(date +%Y%m%d_%H%M%S).csv"
 echo 'ip,status,action,file,duration' > "$precheck_csv"
 tbl_header "PRE-CHECK -- Support Bundle state"
 for ip in "${HOST_IPS[@]}"; do
-  tbl_row "$ip" "${PC_STATUS[$ip]:-?}" "${PC_ACAO[$ip]:-?}" "${PC_FILE[$ip]:---}" "${PC_DURACAO[$ip]:---}"
-  printf '%s,%s,%s,%s,%s\n' "$ip" "${PC_STATUS[$ip]:-?}" "${PC_ACAO[$ip]:-?}" "${PC_FILE[$ip]:---}" "${PC_DURACAO[$ip]:---}" >> "$precheck_csv"
+  tbl_row "$ip" "${PC_STATUS[$ip]:-?}" "${PC_ACTION[$ip]:-?}" "${PC_FILE[$ip]:---}" "${PC_DURATION[$ip]:---}"
+  printf '%s,%s,%s,%s,%s\n' "$ip" "${PC_STATUS[$ip]:-?}" "${PC_ACTION[$ip]:-?}" "${PC_FILE[$ip]:---}" "${PC_DURATION[$ip]:---}" >> "$precheck_csv"
 done
 tbl_footer
 log_ok "Pre-check done. CSV: ${precheck_csv}"

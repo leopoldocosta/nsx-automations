@@ -2,7 +2,7 @@
 
 ## Principles
 
-1. **Libs gordas, automações magras.** Anything that can be reused — parsing, distro detection, sshpass wrappers, crontab helpers, multi-cluster handling — lives in `lib/`. Automation folders contain only the orchestration logic specific to that use case.
+1. **Thick libs, thin automations.** Anything that can be reused — parsing, distro detection, sshpass wrappers, crontab helpers, multi-cluster handling — lives in `lib/`. Automation folders contain only the orchestration logic specific to that use case.
 2. **No per-automation `setup`.** SSH-key registration is a separate top-level helper (`bin/configure_ssh_keys.sh`) callable when needed. Some automations don't need it at all.
 3. **Optional, top-level `deploy`.** Use `bin/deploy.sh` to copy the toolkit to a jump/monitor host. Not every automation requires it (e.g. `kb404700_disk_validation` works straight from `git clone`).
 

@@ -44,7 +44,7 @@ fi
 # ---------------------------------------------------------------------------
 log_banner "PRE-CHECK -- Support Bundle state"
 
-declare -A PC_STATUS PC_ACAO PC_FILE PC_SKIP
+declare -A PC_STATUS PC_ACTION PC_FILE PC_SKIP
 
 for ip in "${HOST_IPS[@]}"; do
   log "${ip}: PRE-CHECK..."
@@ -65,11 +65,11 @@ for ip in "${HOST_IPS[@]}"; do
   log "${ip}: ${PCR_TOTAL} bundle(s) found."
 
   PC_STATUS["$ip"]="${PCR_STATUS}"
-  PC_ACAO["$ip"]="${PCR_ACAO}"
+  PC_ACTION["$ip"]="${PCR_ACTION}"
   PC_FILE["$ip"]="${PCR_FILE}"
   PC_SKIP["$ip"]="${PCR_SKIP}"
 
-  if [[ "${PCR_ACAO}" == "OK" ]]; then
+  if [[ "${PCR_ACTION}" == "OK" ]]; then
     log_ok "${ip}: recent bundle present — generation will be skipped."
   elif [[ "${PCR_TOTAL}" -gt 0 ]]; then
     log_warn "${ip}: only old bundles — will generate new."
@@ -83,8 +83,8 @@ precheck_csv="${LOG_DIR}/precheck_$(date +%Y%m%d_%H%M%S).csv"
 echo 'ip,status,action,file' > "$precheck_csv"
 tbl_header "PRE-CHECK -- Support Bundle state"
 for ip in "${HOST_IPS[@]}"; do
-  tbl_row "$ip" "${PC_STATUS[$ip]}" "${PC_ACAO[$ip]}" "${PC_FILE[$ip]}" ""
-  printf '%s,%s,%s,%s\n' "$ip" "${PC_STATUS[$ip]}" "${PC_ACAO[$ip]}" "${PC_FILE[$ip]}" >> "$precheck_csv"
+  tbl_row "$ip" "${PC_STATUS[$ip]}" "${PC_ACTION[$ip]}" "${PC_FILE[$ip]}" ""
+  printf '%s,%s,%s,%s\n' "$ip" "${PC_STATUS[$ip]}" "${PC_ACTION[$ip]}" "${PC_FILE[$ip]}" >> "$precheck_csv"
 done
 tbl_footer
 log_ok "Pre-check done. CSV: ${precheck_csv}"
@@ -139,7 +139,7 @@ done
 log_banner "FINAL REPORT -- Support Bundle Check"
 tbl_header "FINAL REPORT"
 for ip in "${HOST_IPS[@]}"; do
-  tbl_row "$ip" "${PC_STATUS[$ip]:-?}" "${PC_ACAO[$ip]:-?}" "${PC_FILE[$ip]:---}" ""
+  tbl_row "$ip" "${PC_STATUS[$ip]:-?}" "${PC_ACTION[$ip]:-?}" "${PC_FILE[$ip]:---}" ""
 done
 tbl_footer
 

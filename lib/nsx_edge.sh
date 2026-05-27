@@ -131,14 +131,14 @@ bundle_file_date(){
 #   On return, populates these scalar globals (overwritten each call) — named
 #   with the PCR_ prefix to avoid colliding with per-host PC_* associative
 #   arrays kept by the calling script:
-#     PCR_STATUS, PCR_ACAO, PCR_FILE, PCR_SKIP, PCR_DURACAO, PCR_TOTAL
+#     PCR_STATUS, PCR_ACTION, PCR_FILE, PCR_SKIP, PCR_DURATION, PCR_TOTAL
 #   Semantics:
-#     PCR_STATUS  : "<YYYY-MM-DD HH:MM>" | "OLD (>7d)" | "NONE"
-#     PCR_ACAO    : OK | GENERATE
-#     PCR_FILE    : newest matching bundle filename or "--"
-#     PCR_SKIP    : "true" if a recent bundle exists, else "false"
-#     PCR_DURACAO : bundle_duration for the newest, or "--"
-#     PCR_TOTAL   : total bundles found on the node
+#     PCR_STATUS   : "<YYYY-MM-DD HH:MM>" | "OLD (>7d)" | "NONE"
+#     PCR_ACTION   : OK | GENERATE
+#     PCR_FILE     : newest matching bundle filename or "--"
+#     PCR_SKIP     : "true" if a recent bundle exists, else "false"
+#     PCR_DURATION : bundle_duration for the newest, or "--"
+#     PCR_TOTAL    : total bundles found on the node
 #
 #   Globals consumed: NSX_BUNDLE_RECENT_DAYS (default 7)
 # ---------------------------------------------------------------------------
@@ -173,24 +173,24 @@ precheck_bundle_for(){
     newest="$(printf '%s\n' "${local_recent[@]}" | sort | tail -1)"
     file_date="$(bundle_file_date "${newest}")"
     PCR_STATUS="${file_date:-RECENT (<=${recent_days}d)}"
-    PCR_ACAO="OK"
+    PCR_ACTION="OK"
     PCR_FILE="${newest}"
     PCR_SKIP="true"
-    PCR_DURACAO="$(bundle_duration "$ip" "$newest")"
+    PCR_DURATION="$(bundle_duration "$ip" "$newest")"
   elif (( total > 0 )); then
     PCR_STATUS="OLD (>${recent_days}d)"
-    PCR_ACAO="GENERATE"
+    PCR_ACTION="GENERATE"
     PCR_FILE="--"
     PCR_SKIP="false"
-    PCR_DURACAO="--"
+    PCR_DURATION="--"
   else
     PCR_STATUS="NONE"
-    PCR_ACAO="GENERATE"
+    PCR_ACTION="GENERATE"
     PCR_FILE="--"
     PCR_SKIP="false"
-    PCR_DURACAO="--"
+    PCR_DURATION="--"
   fi
-  export PCR_STATUS PCR_ACAO PCR_FILE PCR_SKIP PCR_DURACAO PCR_TOTAL
+  export PCR_STATUS PCR_ACTION PCR_FILE PCR_SKIP PCR_DURATION PCR_TOTAL
 }
 
 # bundle_duration <ip> <fname>
