@@ -58,7 +58,20 @@ fi
 log()      { printf '%s[%s]%s %s\n'           "${C_CYAN}"    "$(date '+%F %T')" "${C_RESET}" "$*"; }
 log_ok()   { printf '%s[%s] [OK]%s   %s\n'    "${C_GREEN}"   "$(date '+%F %T')" "${C_RESET}" "$*"; }
 log_warn() { printf '%s[%s] [WARN]%s %s\n'    "${C_YELLOW}"  "$(date '+%F %T')" "${C_RESET}" "$*"; }
-log_err()  { printf '%s[%s] [ERR]%s  %s\n'    "${C_RED}"     "$(date '+%F %T')" "${C_RESET}" "$*"; }
+log_err()  {
+  printf '%s[%s] [ERR]%s  %s\n' "${C_RED}" "$(date '+%F %T')" "${C_RESET}" "$*"
+  # Optional outbound notification on errors (Slack/Teams-compatible webhook).
+  # Opt-in via NSX_NOTIFY_WEBHOOK=<url>. We never block on this — failures are
+  # silent so an unavailable webhook doesn't mask the original error.
+  if [[ -n "${NSX_NOTIFY_WEBHOOK:-}" ]] && command -v curl >/dev/null 2>&1; then
+    local _host; _host="$(hostname 2>/dev/null || echo unknown)"
+    local _payload
+    _payload="$(printf '{"text":"[NSX][%s] ERR: %s"}' "${_host}" "$*" | sed 's/[[:cntrl:]]//g')"
+    curl -sS -X POST -H 'Content-Type: application/json' \
+      --max-time 5 --data "${_payload}" \
+      "${NSX_NOTIFY_WEBHOOK}" >/dev/null 2>&1 || true
+  fi
+}
 
 log_banner(){
   local title="${1:-}"
@@ -317,10 +330,24 @@ _sshpass_safe(){
 # ---------------------------------------------------------------------------
 # Base SSH as admin (works for edge AND manager NSX CLI).
 # Uses ADMIN_KEY when present, falls back to NSX_PASS via sshpass.
-# Stderr silenced for clean stdout capture.
+#
+# Stderr is silenced by default for clean stdout capture. Set NSX_DEBUG=1
+# in the environment to let SSH's stderr through — useful when diagnosing
+# host-key mismatches, MaxAuthTries, kex resets, etc.
 # ---------------------------------------------------------------------------
+# _ssh_stderr_redir — internal helper. Echoes the redirection token to apply
+# to ssh's stderr. Honors NSX_DEBUG=1.
+_ssh_stderr_redir(){
+  if [[ "${NSX_DEBUG:-0}" == "1" ]]; then
+    printf '%s' "/dev/stderr"
+  else
+    printf '%s' "/dev/null"
+  fi
+}
+
 ssh_admin(){
   local ip="$1"; shift
+  local _err; _err="$(_ssh_stderr_redir)"
   if [[ -f "${ADMIN_KEY}" ]]; then
     ssh -i "${ADMIN_KEY}" \
         -o StrictHostKeyChecking=no \
@@ -328,14 +355,14 @@ ssh_admin(){
         -o ConnectTimeout=15 \
         -o BatchMode=yes \
         -o LogLevel=ERROR \
-        "${NSX_USER:-admin}@${ip}" "$@" 2>/dev/null
+        "${NSX_USER:-admin}@${ip}" "$@" 2>>"${_err}"
   else
     _sshpass_safe NSX_PASS ssh \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         -o ConnectTimeout=15 \
         -o LogLevel=ERROR \
-        "${NSX_USER:-admin}@${ip}" "$@" 2>/dev/null
+        "${NSX_USER:-admin}@${ip}" "$@" 2>>"${_err}"
   fi
 }
 
@@ -369,6 +396,54 @@ remove_crontab_line(){
   local cmd="${1:?usage: remove_crontab_line <command>}"
   crontab -l 2>/dev/null | grep -vF "${cmd}" | crontab -
   log_ok "Crontab line removed (matching '${cmd}')."
+}
+
+# ---------------------------------------------------------------------------
+# ssh_admin_retry <ip> <cmd> [retries] [base_backoff_seconds]
+#   Read-only retry wrapper around ssh_admin. Backs off linearly
+#   (base, 2*base, 3*base, ...). Echoes stdout of the first success.
+#   Returns 0 on success, 1 if all attempts fail.
+#
+# Defaults: 3 retries, 5s base. Use sparingly — do NOT wrap destructive
+# commands like `reboot`, since this may submit them multiple times.
+# ---------------------------------------------------------------------------
+ssh_admin_retry(){
+  local ip="${1:?usage: ssh_admin_retry <ip> <cmd> [retries] [base]}"
+  local cmd="${2:?missing cmd}"
+  local retries="${3:-3}"
+  local base="${4:-5}"
+  local attempt=1 out
+  while (( attempt <= retries )); do
+    if out="$(ssh_admin "${ip}" "${cmd}")" && [[ -n "${out}" ]]; then
+      printf '%s' "${out}"
+      return 0
+    fi
+    if (( attempt < retries )); then
+      local wait_s=$(( base * attempt ))
+      log_warn "${ip}: '${cmd}' attempt ${attempt}/${retries} failed — backing off ${wait_s}s"
+      sleep "${wait_s}"
+    fi
+    attempt=$(( attempt + 1 ))
+  done
+  log_err "${ip}: '${cmd}' failed after ${retries} attempts."
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# rotate_logs [days] [dir]
+#   Removes files under <dir> (default $LOG_DIR) older than <days> days
+#   (default $NSX_LOG_RETENTION_DAYS, default 30).
+#   Best-effort: never aborts the caller on failure.
+# ---------------------------------------------------------------------------
+rotate_logs(){
+  local days="${1:-${NSX_LOG_RETENTION_DAYS:-30}}"
+  local dir="${2:-${LOG_DIR}}"
+  [[ -d "${dir}" ]] || return 0
+  local removed
+  removed="$(find "${dir}" -type f -mtime "+${days}" -print -delete 2>/dev/null | wc -l | tr -d ' ')"
+  if [[ "${removed}" != "0" && -n "${removed}" ]]; then
+    log "Log rotation: removed ${removed} file(s) older than ${days}d from ${dir}"
+  fi
 }
 
 # ---------------------------------------------------------------------------

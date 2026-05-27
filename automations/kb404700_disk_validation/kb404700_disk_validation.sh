@@ -245,7 +245,7 @@ print_report(){
           "${NODE_VERSION_SHORT[${aip}]:-N/A}" \
           "${NODE_ROOT_PART_PCT[${aip}]:-N/A}" \
           "${NODE_OVERLAY2_SIZE[${aip}]:-N/A}"
-        (( idx++ ))
+        idx=$(( idx + 1 ))
       done
     fi
     echo ""
@@ -284,6 +284,7 @@ main(){
   print_report
 
   log "=== Done ==="
+  rotate_logs   # honor NSX_LOG_RETENTION_DAYS (default 30)
   confirm_clear_creds_with_timeout 30
 }
 

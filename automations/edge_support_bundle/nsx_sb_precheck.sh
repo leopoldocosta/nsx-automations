@@ -26,7 +26,6 @@ CLEAN_ALL=false
 [[ "${1:-}" == "--clean-all" ]] && { CLEAN_ALL=true; log "=== CLEAN-ALL: removing ALL existing bundles ==="; }
 
 declare -A PC_STATUS PC_ACAO PC_FILE PC_SKIP PC_DURACAO
-now_epoch=$(date +%s)
 
 for ip in "${HOST_IPS[@]}"; do
   log "${ip}: PRE-CHECK..."
@@ -59,38 +58,23 @@ for ip in "${HOST_IPS[@]}"; do
     continue
   fi
 
-  raw_list="$(list_remote_bundles "$ip")"
-  local_recent=(); local_old=(); total_count=0
-  while IFS= read -r fname; do
-    [[ -z "$fname" ]] && continue
-    (( total_count++ ))
-    age_days=0
-    if [[ "$fname" =~ _([0-9]{4})([0-9]{2})([0-9]{2})_[0-9]{6}\.tgz$ ]]; then
-      file_epoch=$(date -d "${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}" +%s 2>/dev/null || echo "$now_epoch")
-      age_days=$(( (now_epoch - file_epoch) / 86400 ))
-    else
-      age_days=999
-    fi
-    if (( age_days <= 7 )); then local_recent+=("$fname"); else local_old+=("$fname"); fi
-  done <<< "$raw_list"
+  # Shared classifier: populates PCR_* scalars (see lib/nsx_edge.sh).
+  # Copy them into the per-host associative arrays.
+  precheck_bundle_for "$ip"
+  PC_STATUS["$ip"]="${PCR_STATUS}"
+  PC_ACAO["$ip"]="${PCR_ACAO}"
+  PC_FILE["$ip"]="${PCR_FILE}"
+  PC_SKIP["$ip"]="${PCR_SKIP}"
+  PC_DURACAO["$ip"]="${PCR_DURACAO}"
 
-  if (( ${#local_recent[@]} > 0 )); then
-    newest="$(printf '%s\n' "${local_recent[@]}" | sort | tail -1)"
-    file_date="$(bundle_file_date "${newest}")"
-    PC_STATUS["$ip"]="${file_date:-RECENT (<=7d)}"
-    PC_ACAO["$ip"]="OK"
-    PC_FILE["$ip"]="${newest}"
-    PC_SKIP["$ip"]="true"
-    PC_DURACAO["$ip"]="$(bundle_duration "$ip" "$newest")"
-    log_ok "${ip}: recent bundle present."
-  elif (( total_count > 0 )); then
-    PC_STATUS["$ip"]="OLD (>7d)"; PC_ACAO["$ip"]="GENERATE"
-    PC_FILE["$ip"]="--"; PC_SKIP["$ip"]="false"; PC_DURACAO["$ip"]="--"
-    log_warn "${ip}: only old bundle(s)."
-  else
-    PC_STATUS["$ip"]="NONE"; PC_ACAO["$ip"]="GENERATE"
-    PC_FILE["$ip"]="--"; PC_SKIP["$ip"]="false"; PC_DURACAO["$ip"]="--"
-  fi
+  case "${PCR_ACAO}" in
+    OK)       log_ok   "${ip}: recent bundle present." ;;
+    GENERATE) if [[ "${PCR_TOTAL}" -gt 0 ]]; then
+                log_warn "${ip}: only old bundle(s)."
+              else
+                log "${ip}: no bundle found."
+              fi ;;
+  esac
 
   disable_root_ssh "$ip"
 done

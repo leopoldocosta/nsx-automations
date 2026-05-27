@@ -45,7 +45,6 @@ fi
 log_banner "PRE-CHECK -- Support Bundle state"
 
 declare -A PC_STATUS PC_ACAO PC_FILE PC_SKIP
-now_epoch=$(date +%s)
 
 for ip in "${HOST_IPS[@]}"; do
   log "${ip}: PRE-CHECK..."
@@ -61,43 +60,20 @@ for ip in "${HOST_IPS[@]}"; do
   while IFS= read -r line; do printf '  |  %s\n' "$line"; done <<< "$ls_out"
   printf '  +----------------------------------------------------------+\n\n'
 
-  raw_list="$(list_remote_bundles "$ip")"
-  log "${ip}: detected bundles: '${raw_list}'"
+  # Shared classifier: populates PCR_* scalars.
+  precheck_bundle_for "$ip"
+  log "${ip}: ${PCR_TOTAL} bundle(s) found."
 
-  local_recent=(); local_old=(); total_count=0
-  while IFS= read -r fname; do
-    [[ -z "$fname" ]] && continue
-    (( total_count++ ))
-    age_days=0
-    if [[ "$fname" =~ _([0-9]{4})([0-9]{2})([0-9]{2})_[0-9]{6}\.tgz$ ]]; then
-      file_epoch=$(date -d "${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}" +%s 2>/dev/null || echo "$now_epoch")
-      age_days=$(( (now_epoch - file_epoch) / 86400 ))
-    else
-      age_days=999
-    fi
-    log "${ip}: '${fname}' -> ${age_days} day(s)."
-    if (( age_days <= 7 )); then local_recent+=("$fname")
-    else local_old+=("$fname"); fi
-  done <<< "$raw_list"
+  PC_STATUS["$ip"]="${PCR_STATUS}"
+  PC_ACAO["$ip"]="${PCR_ACAO}"
+  PC_FILE["$ip"]="${PCR_FILE}"
+  PC_SKIP["$ip"]="${PCR_SKIP}"
 
-  log "${ip}: ${total_count} bundle(s) found."
-
-  if (( ${#local_recent[@]} > 0 )); then
-    newest="$(printf '%s\n' "${local_recent[@]}" | sort | tail -1)"
-    file_date="$(bundle_file_date "${newest}")"
-    PC_STATUS["$ip"]="${file_date:-RECENT}"
-    PC_ACAO["$ip"]="OK"
-    PC_FILE["$ip"]="${newest}"
-    PC_SKIP["$ip"]="true"
+  if [[ "${PCR_ACAO}" == "OK" ]]; then
     log_ok "${ip}: recent bundle present — generation will be skipped."
-    (( ${#local_old[@]} > 0 )) && log_warn "${ip}: old bundle(s) — use --clean-all to remove."
-  elif (( total_count > 0 )); then
-    PC_STATUS["$ip"]="OLD (>7d)"; PC_ACAO["$ip"]="GENERATE"
-    PC_FILE["$ip"]="--"; PC_SKIP["$ip"]="false"
+  elif [[ "${PCR_TOTAL}" -gt 0 ]]; then
     log_warn "${ip}: only old bundles — will generate new."
   else
-    PC_STATUS["$ip"]="NONE"; PC_ACAO["$ip"]="GENERATE"
-    PC_FILE["$ip"]="--"; PC_SKIP["$ip"]="false"
     log "${ip}: no bundle found."
   fi
 done
@@ -175,4 +151,5 @@ done
 
 clear_creds
 rm -f "${RUN_DIR}/session.env" 2>/dev/null || true
+rotate_logs   # honor NSX_LOG_RETENTION_DAYS (default 30)
 log_ok "Done. Status CSV: ${STATUS_CSV}"

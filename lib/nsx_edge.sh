@@ -24,9 +24,11 @@ ask_root_creds(){
 
 # ---------------------------------------------------------------------------
 # SSH as root — uses ROOT_KEY when present, falls back to ROOT_PASS.
+# Honors NSX_DEBUG=1 to surface SSH stderr (see lib/common.sh:_ssh_stderr_redir).
 # ---------------------------------------------------------------------------
 ssh_root(){
   local ip="$1"; shift
+  local _err; _err="$(_ssh_stderr_redir)"
   if [[ -f "${ROOT_KEY}" ]]; then
     ssh -i "${ROOT_KEY}" \
         -o StrictHostKeyChecking=no \
@@ -34,14 +36,14 @@ ssh_root(){
         -o ConnectTimeout=15 \
         -o BatchMode=yes \
         -o LogLevel=ERROR \
-        "root@${ip}" "$@" 2>/dev/null
+        "root@${ip}" "$@" 2>>"${_err}"
   else
     _sshpass_safe ROOT_PASS ssh \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         -o ConnectTimeout=15 \
         -o LogLevel=ERROR \
-        "root@${ip}" "$@" 2>/dev/null
+        "root@${ip}" "$@" 2>>"${_err}"
   fi
 }
 
@@ -121,6 +123,76 @@ bundle_file_date(){
   fi
 }
 
+# precheck_bundle_for <ip>
+#   Inspects an Edge's existing support bundles and classifies the state.
+#   Requires root SSH already enabled by the caller (so the caller controls
+#   the enable/disable cadence around a batch).
+#
+#   On return, populates these scalar globals (overwritten each call) — named
+#   with the PCR_ prefix to avoid colliding with per-host PC_* associative
+#   arrays kept by the calling script:
+#     PCR_STATUS, PCR_ACAO, PCR_FILE, PCR_SKIP, PCR_DURACAO, PCR_TOTAL
+#   Semantics:
+#     PCR_STATUS  : "<YYYY-MM-DD HH:MM>" | "OLD (>7d)" | "NONE"
+#     PCR_ACAO    : OK | GENERATE
+#     PCR_FILE    : newest matching bundle filename or "--"
+#     PCR_SKIP    : "true" if a recent bundle exists, else "false"
+#     PCR_DURACAO : bundle_duration for the newest, or "--"
+#     PCR_TOTAL   : total bundles found on the node
+#
+#   Globals consumed: NSX_BUNDLE_RECENT_DAYS (default 7)
+# ---------------------------------------------------------------------------
+precheck_bundle_for(){
+  local ip="${1:?usage: precheck_bundle_for <ip>}"
+  local recent_days="${NSX_BUNDLE_RECENT_DAYS:-7}"
+  local now_epoch raw_list fname age_days file_epoch newest file_date
+  local -a local_recent=() local_old=()
+  local total=0
+
+  now_epoch="$(date +%s)"
+  raw_list="$(list_remote_bundles "$ip")"
+
+  while IFS= read -r fname; do
+    [[ -z "$fname" ]] && continue
+    # NB: `(( total++ ))` returns 0 when total was 0, which trips `set -e`.
+    # Use the safe pre-increment idiom instead.
+    total=$(( total + 1 ))
+    age_days=0
+    if [[ "$fname" =~ _([0-9]{4})([0-9]{2})([0-9]{2})_[0-9]{6}\.tgz$ ]]; then
+      file_epoch=$(date -d "${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}" +%s 2>/dev/null || echo "$now_epoch")
+      age_days=$(( (now_epoch - file_epoch) / 86400 ))
+    else
+      age_days=999
+    fi
+    if (( age_days <= recent_days )); then local_recent+=("$fname")
+    else local_old+=("$fname"); fi
+  done <<< "$raw_list"
+
+  PCR_TOTAL="$total"
+  if (( ${#local_recent[@]} > 0 )); then
+    newest="$(printf '%s\n' "${local_recent[@]}" | sort | tail -1)"
+    file_date="$(bundle_file_date "${newest}")"
+    PCR_STATUS="${file_date:-RECENT (<=${recent_days}d)}"
+    PCR_ACAO="OK"
+    PCR_FILE="${newest}"
+    PCR_SKIP="true"
+    PCR_DURACAO="$(bundle_duration "$ip" "$newest")"
+  elif (( total > 0 )); then
+    PCR_STATUS="OLD (>${recent_days}d)"
+    PCR_ACAO="GENERATE"
+    PCR_FILE="--"
+    PCR_SKIP="false"
+    PCR_DURACAO="--"
+  else
+    PCR_STATUS="NONE"
+    PCR_ACAO="GENERATE"
+    PCR_FILE="--"
+    PCR_SKIP="false"
+    PCR_DURACAO="--"
+  fi
+  export PCR_STATUS PCR_ACAO PCR_FILE PCR_SKIP PCR_DURACAO PCR_TOTAL
+}
+
 # bundle_duration <ip> <fname>
 #   Time between bundle request (parsed from filename) and creation (remote mtime).
 #   Output format: "Xh Ym Zs" / "Ym Zs" / "Zs" / "--" on failure.
@@ -152,20 +224,45 @@ bundle_duration(){
 # ---------------------------------------------------------------------------
 # Edge SSH-key registration (one-time setup via admin CLI)
 # Uses NSX_PASS (collected via ask_admin_creds).
+#
+# Both functions return:
+#   0 — key registered now or already present (idempotent OK)
+#   1 — registration command failed unexpectedly
 # ---------------------------------------------------------------------------
+_classify_set_user_ssh_key_result(){
+  local ip="$1" who="$2" result="$3"
+  if echo "${result}" | grep -qiE "already exists|duplicate|same key"; then
+    log_ok "${ip}: ${who} key already registered (no-op)."
+    return 0
+  fi
+  if [[ -z "${result}" ]] || echo "${result}" | grep -qiE "success|registered"; then
+    log_ok "${ip}: ${who} key registered."
+    return 0
+  fi
+  log_warn "${ip}: ${who} key — unexpected response: ${result}"
+  return 1
+}
+
 register_edge_admin_key(){
   local ip="$1"
   local pub_full="$2"   # full line: "ssh-ed25519 AAAA... comment"
+  local result
   log "${ip}: registering admin SSH key..."
-  admin_cmd "$ip" "set user admin ssh-key \"${pub_full}\"" || true
+  # Capture both stdout and stderr so we can classify the outcome.
+  result="$(admin_cmd "$ip" "set user admin ssh-key \"${pub_full}\"" 2>&1 || true)"
+  _classify_set_user_ssh_key_result "${ip}" "admin" "${result}"
 }
 
 register_edge_root_key(){
   local ip="$1"
   local pub_full="$2"
+  local result rc
   enable_root_ssh "$ip"
   sleep 2
   log "${ip}: registering root SSH key..."
-  admin_cmd "$ip" "set user root ssh-key \"${pub_full}\"" || true
+  result="$(admin_cmd "$ip" "set user root ssh-key \"${pub_full}\"" 2>&1 || true)"
+  _classify_set_user_ssh_key_result "${ip}" "root" "${result}"
+  rc=$?
   disable_root_ssh "$ip"
+  return $rc
 }
