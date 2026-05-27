@@ -220,6 +220,7 @@ parse_managers_conf(){
       case "${key}" in
         hosts)
           # Nameref to the cluster's hosts array — avoids eval entirely.
+          # shellcheck disable=SC2178   # _hosts_ref is a nameref, inherits array type
           local -n _hosts_ref="CLUSTER_HOSTS_${current_idx}"
           local item
           for item in ${val//,/ }; do
@@ -267,6 +268,7 @@ parse_managers_conf(){
   log_ok "Parsed ${CLUSTER_COUNT} cluster(s) from ${file}:"
   local i user_var
   for (( i=0; i<CLUSTER_COUNT; i++ )); do
+    # shellcheck disable=SC2178   # _hosts_view is a nameref, inherits array type
     local -n _hosts_view="CLUSTER_HOSTS_${i}"
     user_var="CLUSTER_ADMIN_USER_${i}"
     log "  [${CLUSTER_LABELS[$i]}] user=${!user_var} hosts=${#_hosts_view[@]}: ${_hosts_view[*]}"
@@ -277,6 +279,7 @@ parse_managers_conf(){
 # Helper: echo the hosts array of a cluster by index, space-separated.
 cluster_hosts(){
   local idx="$1"
+  # shellcheck disable=SC2178   # _hosts_ref is a nameref, inherits array type
   local -n _hosts_ref="CLUSTER_HOSTS_${idx}"
   echo "${_hosts_ref[*]}"
 }
