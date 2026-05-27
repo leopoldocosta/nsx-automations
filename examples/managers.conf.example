@@ -1,0 +1,11 @@
+# managers.conf.example — top-level reference template.
+# Multi-cluster INI format. One section per NSX cluster.
+# Credentials are NEVER stored here — prompted at runtime.
+#
+# [GER1]
+# hosts = 192.168.20.10, 192.168.20.11, 192.168.20.12
+# admin_user = admin
+#
+# [GER2]
+# hosts = 192.168.30.10, 192.168.30.11, 192.168.30.12
+# admin_user = admin

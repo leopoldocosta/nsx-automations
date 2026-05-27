@@ -1,0 +1,17 @@
+# managers.conf — Multi-cluster NSX Manager config.
+# Copy to managers.conf and edit. managers.conf is git-ignored.
+#
+# - One section per cluster (any name, e.g. GER1, PROD, HML).
+# - hosts: comma- or space-separated list of IPs.
+# - admin_user: optional, defaults to "admin".
+# - Credentials NEVER go here — they are prompted at runtime.
+#
+# Example with two clusters:
+#
+# [GER1]
+# hosts = 192.168.20.10, 192.168.20.11, 192.168.20.12
+# admin_user = admin
+#
+# [GER2]
+# hosts = 192.168.30.10, 192.168.30.11, 192.168.30.12
+# admin_user = admin

@@ -1,0 +1,35 @@
+# ===== Runtime data — never commit =====
+logs/
+run/
+*.log
+*.csv
+
+# ===== Real host lists (commit only the .example templates) =====
+edge_nodes.txt
+managers.txt
+managers.conf
+hosts.txt
+
+# ===== Credentials, keys, configs with secrets =====
+.ssh_keys/
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+.env
+*.env
+session.env
+.nsx_managers.conf
+
+# ===== Lock files =====
+*.lock
+
+# ===== OS / editor noise =====
+*.swp
+*.tmp
+*.bak
+__pycache__/
+.DS_Store
+Thumbs.db

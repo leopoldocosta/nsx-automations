@@ -1,0 +1,10 @@
+# edge_nodes.example
+# Top-level reference template for an Edge Node IP list.
+# Each automation targeting Edges ships its own copy inside the automation folder.
+#
+# Format: one IPv4 per line. # starts a comment.
+#
+# Example:
+# 192.168.10.10
+# 192.168.10.11
+# 192.168.10.12

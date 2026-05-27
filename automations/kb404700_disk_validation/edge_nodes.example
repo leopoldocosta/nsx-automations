@@ -1,0 +1,8 @@
+# edge_nodes.example
+# Copy to edge_nodes.txt and edit. edge_nodes.txt is git-ignored.
+# Format: one IPv4 per line. # starts a comment.
+#
+# Example:
+# 192.168.100.10
+# 192.168.100.11
+# 192.168.100.12
