@@ -63,32 +63,40 @@ T_HOST="${TARGET%%:*}"
 T_PATH="${TARGET#*:}"
 [[ "${T_HOST}" == "${TARGET}" ]] && T_PATH="\$HOME/nsx-automations"
 
+# run_or_show <argv...> — execute argv directly (no eval). With --dry-run,
+# prints the command instead. Arguments are passed verbatim, so no shell
+# metachar in TARGET/T_PATH gets reinterpreted.
 run_or_show(){
   if "${DRY_RUN}"; then
-    echo "  [DRY-RUN] $*"
+    printf '  [DRY-RUN]'
+    printf ' %q' "$@"
+    printf '\n'
   else
-    eval "$@"
+    "$@"
   fi
 }
 
 # 1. Ensure target dir exists
-run_or_show "ssh -o StrictHostKeyChecking=no \"${T_HOST}\" 'mkdir -p \"${T_PATH}\"'"
+run_or_show ssh -o StrictHostKeyChecking=no "${T_HOST}" "mkdir -p ${T_PATH}"
 
 # 2. rsync (preferred) or scp fallback
 if command -v rsync >/dev/null 2>&1; then
   for it in "${SRC_ITEMS[@]}"; do
-    run_or_show "rsync -avz --delete-excluded --exclude logs/ --exclude run/ --exclude .ssh_keys/ \"${it}\" \"${T_HOST}:${T_PATH}/\""
+    run_or_show rsync -avz --delete-excluded \
+      --exclude logs/ --exclude run/ --exclude .ssh_keys/ \
+      "${it}" "${T_HOST}:${T_PATH}/"
   done
 else
   for it in "${SRC_ITEMS[@]}"; do
-    run_or_show "scp -r \"${it}\" \"${T_HOST}:${T_PATH}/\""
+    run_or_show scp -r "${it}" "${T_HOST}:${T_PATH}/"
   done
 fi
 
 # 3. Optional: install deps on the target
 if "${DO_DEPS}"; then
   log "Installing dependencies on ${T_HOST}..."
-  run_or_show "ssh \"${T_HOST}\" 'cd \"${T_PATH}\" && bash -lc \"source lib/common.sh && install_pkg openssh-client sshpass\"'"
+  run_or_show ssh "${T_HOST}" \
+    "cd ${T_PATH} && bash -lc 'source lib/common.sh && install_pkg openssh-client sshpass'"
 fi
 
 log_ok "Deploy complete."

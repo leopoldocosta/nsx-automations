@@ -53,7 +53,9 @@ need_cmd ssh-keygen
 # Generate / locate the local key
 PUB_VAL="$(ensure_local_ssh_key "${SSH_PRIV}" rsa)"
 PUB_FULL="$(cat "${SSH_PRIV}.pub")"
-log "Local public key: ${PUB_VAL:0:32}..."
+# Detect NSX-CLI key-type token from the OpenSSH header (e.g. "ssh-rsa", "ssh-ed25519")
+PUB_TYPE="$(awk '{print $1}' "${SSH_PRIV}.pub")"
+log "Local public key: ${PUB_VAL:0:32}... (type=${PUB_TYPE})"
 
 case "${TYPE}" in
   edge)
@@ -91,7 +93,7 @@ case "${TYPE}" in
       log_banner "Cluster [${label}]"
       read -r -a hosts <<<"$(cluster_hosts "${i}")"
       for ip in "${hosts[@]}"; do
-        with_cluster_creds "${i}" register_manager_admin_key "${ip}" "${PUB_VAL}" "${KEY_LABEL}" || true
+        with_cluster_creds "${i}" register_manager_admin_key "${ip}" "${PUB_VAL}" "${KEY_LABEL}" "${PUB_TYPE}" || true
       done
     done
 

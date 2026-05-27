@@ -14,37 +14,50 @@ fi
 # ---------------------------------------------------------------------------
 # Tunables (overridable by automation)
 # ---------------------------------------------------------------------------
-NSX_REBOOT_INTERVAL="${NSX_REBOOT_INTERVAL:-3600}"   # seconds between managers
-NSX_REBOOT_MAX_WAIT="${NSX_REBOOT_MAX_WAIT:-900}"    # max wait for down/up
+NSX_REBOOT_INTERVAL="${NSX_REBOOT_INTERVAL:-3600}"        # seconds between managers
+NSX_REBOOT_MAX_WAIT="${NSX_REBOOT_MAX_WAIT:-900}"         # max wait for TCP down/up
+NSX_CLUSTER_STABLE_TIMEOUT="${NSX_CLUSTER_STABLE_TIMEOUT:-600}"  # poll budget for STABLE
+NSX_CLUSTER_STABLE_INTERVAL="${NSX_CLUSTER_STABLE_INTERVAL:-15}" # poll interval
 NSX_SSH_PORT="${NSX_SSH_PORT:-22}"
 
 # ---------------------------------------------------------------------------
 # SSH-key registration via NSX CLI.
 # Uses NSX_PASS (admin password) for the one-time auth.
 #
-# register_manager_admin_key <ip> <pub_key_value> [label]
+# register_manager_admin_key <ip> <pub_key_value> [label] [key_type]
 #   pub_key_value: the base64 portion (no "ssh-rsa "/"ssh-ed25519 " prefix
 #                  and no trailing comment). Use `ensure_local_ssh_key`
 #                  from common.sh to obtain it.
+#   key_type     : NSX CLI type token. Default "ssh-rsa". Use "ssh-ed25519"
+#                  for ed25519 keys.
+#
+# Returns:
+#   0 — key registered now OR already present (idempotent OK)
+#   1 — unexpected response from the NSX CLI
 # ---------------------------------------------------------------------------
 register_manager_admin_key(){
   local ip="$1"
   local pub_val="$2"
   local label="${3:-nsx-automation-key}"
+  local key_type="${4:-ssh-rsa}"
   local user="${NSX_USER:-admin}"
   local result
 
-  log "${ip}: registering SSH key (label='${label}', user='${user}')..."
+  log "${ip}: registering SSH key (label='${label}', user='${user}', type='${key_type}')..."
   result="$(_sshpass_safe NSX_PASS ssh \
     -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=10 \
     -o LogLevel=ERROR \
     "${user}@${ip}" \
-    "set user ${user} ssh-keys label ${label} type ssh-rsa value ${pub_val}" 2>&1 || true)"
+    "set user ${user} ssh-keys label ${label} type ${key_type} value ${pub_val}" 2>&1 || true)"
 
   echo "  Return: ${result}"
-  if echo "${result}" | grep -qiE "already exists|${label}|success"; then
+  if echo "${result}" | grep -qiE "already exists|duplicate"; then
+    log_ok "${ip}: key already registered (no-op)."
+    return 0
+  fi
+  if echo "${result}" | grep -qiE "${label}|success" || [[ -z "${result}" ]]; then
     log_ok "${ip}: key registered."
     return 0
   fi
@@ -93,16 +106,62 @@ reboot_manager_and_wait(){
     sleep 10; waited=$((waited + 10))
   done
 
-  if tcp_check "$ip" "${NSX_SSH_PORT}"; then
-    log_ok "${ip}: back online after ${waited}s."
+  if ! tcp_check "$ip" "${NSX_SSH_PORT}"; then
+    log_err "${ip}: did NOT return within ${NSX_REBOOT_MAX_WAIT}s. INVESTIGATE."
+    return 1
+  fi
+  log_ok "${ip}: TCP back online after ${waited}s."
+
+  # Cluster-level gate: TCP up does not imply the cluster has reconciled.
+  # This is exactly the failure mode KB 396719 mitigates — moving to the
+  # next manager before the previous one has rejoined.
+  if [[ "${NSX_SKIP_CLUSTER_GATE:-0}" == "1" ]]; then
+    log_warn "${ip}: NSX_SKIP_CLUSTER_GATE=1 — skipping cluster STABLE check."
     return 0
   fi
-  log_err "${ip}: did NOT return within ${NSX_REBOOT_MAX_WAIT}s. INVESTIGATE."
-  return 1
+  wait_cluster_stable "$ip" || return 1
+  return 0
 }
 
 get_cluster_status(){ ssh_admin "$1" "get cluster status"; }
 get_managers(){       ssh_admin "$1" "get managers"; }
+
+# ---------------------------------------------------------------------------
+# wait_cluster_stable <ip> [timeout] [interval]
+#   Polls `get cluster status` on <ip> until the overall status reports
+#   STABLE (NSX 3.x/4.x) or, as a fallback, every line contains "UP".
+#   Defaults from NSX_CLUSTER_STABLE_TIMEOUT / NSX_CLUSTER_STABLE_INTERVAL.
+#   Returns 0 on STABLE, 1 on timeout.
+# ---------------------------------------------------------------------------
+wait_cluster_stable(){
+  local ip="${1:?usage: wait_cluster_stable <ip>}"
+  local timeout="${2:-${NSX_CLUSTER_STABLE_TIMEOUT}}"
+  local interval="${3:-${NSX_CLUSTER_STABLE_INTERVAL}}"
+  local waited=0 out
+
+  log "[CLUSTER] ${ip}: waiting for STABLE (timeout ${timeout}s, poll ${interval}s)..."
+  while (( waited < timeout )); do
+    out="$(get_cluster_status "$ip" 2>/dev/null || true)"
+    if [[ -n "${out}" ]]; then
+      # Primary signal: "Overall Status: STABLE" / "Cluster Status: STABLE"
+      if echo "${out}" | grep -qiE '(overall|cluster)[[:space:]]*status[[:space:]]*:[[:space:]]*stable'; then
+        log_ok "[CLUSTER] ${ip}: STABLE after ${waited}s."
+        return 0
+      fi
+      # Fallback: degraded/down/joining anywhere — keep waiting
+      if echo "${out}" | grep -qiE 'degraded|unstable|down|joining|unavailable'; then
+        :
+      elif echo "${out}" | grep -qi 'stable'; then
+        log_ok "[CLUSTER] ${ip}: STABLE (fallback match) after ${waited}s."
+        return 0
+      fi
+    fi
+    sleep "${interval}"
+    waited=$(( waited + interval ))
+  done
+  log_err "[CLUSTER] ${ip}: did NOT reach STABLE within ${timeout}s. INVESTIGATE."
+  return 1
+}
 
 # ---------------------------------------------------------------------------
 # Multi-cluster config parser (INI-style sections)
@@ -145,8 +204,8 @@ parse_managers_conf(){
       CLUSTER_LABELS[$current_idx]="${current_label}"
       # default admin_user (override below if specified)
       declare -g "CLUSTER_ADMIN_USER_${current_idx}=admin"
-      # init empty hosts array for this cluster
-      eval "declare -ga CLUSTER_HOSTS_${current_idx}=()"
+      # init empty hosts array for this cluster via nameref (no eval)
+      declare -ga "CLUSTER_HOSTS_${current_idx}=()"
       continue
     fi
 
@@ -160,16 +219,36 @@ parse_managers_conf(){
       val="${BASH_REMATCH[2]}"
       case "${key}" in
         hosts)
-          # split on commas or whitespace
+          # Nameref to the cluster's hosts array — avoids eval entirely.
+          local -n _hosts_ref="CLUSTER_HOSTS_${current_idx}"
           local item
           for item in ${val//,/ }; do
             item="${item#"${item%%[![:space:]]*}"}"
             item="${item%"${item##*[![:space:]]}"}"
             [[ -z "${item}" ]] && continue
-            eval "CLUSTER_HOSTS_${current_idx}+=(\"${item}\")"
+            # Defense in depth: accept IPv4 dotted quad OR hostname starting
+            # with an alphanumeric and containing only [A-Za-z0-9.-].
+            # This rejects shell metacharacters AND tokens like "rm" / "-rf"
+            # that could leak from a malformed conf.
+            if [[ "${item}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              :   # IPv4 — accept
+            elif [[ "${item}" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ ]] \
+                 && [[ "${item}" == *.* ]]; then
+              :   # FQDN-ish (must contain a dot) — accept
+            else
+              log_warn "Skipping invalid host entry in [${current_label}]: ${item}"
+              continue
+            fi
+            _hosts_ref+=("${item}")
           done
+          unset -n _hosts_ref
           ;;
         admin_user)
+          # Defense in depth: usernames are alnum + _ - .
+          if [[ ! "${val}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            log_warn "Skipping suspicious admin_user in [${current_label}]: ${val}"
+            continue
+          fi
           declare -g "CLUSTER_ADMIN_USER_${current_idx}=${val}"
           ;;
         *)
@@ -186,19 +265,20 @@ parse_managers_conf(){
   fi
 
   log_ok "Parsed ${CLUSTER_COUNT} cluster(s) from ${file}:"
-  local i hosts_var hosts_count user_var
+  local i user_var
   for (( i=0; i<CLUSTER_COUNT; i++ )); do
-    hosts_var="CLUSTER_HOSTS_${i}[@]"
+    local -n _hosts_view="CLUSTER_HOSTS_${i}"
     user_var="CLUSTER_ADMIN_USER_${i}"
-    hosts_count="$(eval "echo \${#CLUSTER_HOSTS_${i}[@]}")"
-    log "  [${CLUSTER_LABELS[$i]}] user=${!user_var} hosts=${hosts_count}: $(eval "echo \"\${${hosts_var}}\"")"
+    log "  [${CLUSTER_LABELS[$i]}] user=${!user_var} hosts=${#_hosts_view[@]}: ${_hosts_view[*]}"
+    unset -n _hosts_view
   done
 }
 
 # Helper: echo the hosts array of a cluster by index, space-separated.
 cluster_hosts(){
   local idx="$1"
-  eval "echo \"\${CLUSTER_HOSTS_${idx}[@]}\""
+  local -n _hosts_ref="CLUSTER_HOSTS_${idx}"
+  echo "${_hosts_ref[*]}"
 }
 
 cluster_admin_user(){
@@ -262,6 +342,12 @@ with_cluster_creds(){
 #   Reboots each host of the cluster sequentially, with NSX_REBOOT_INTERVAL
 #   between reboots. Honors NSX_REBOOT_MAX_WAIT for down/up window.
 #   Assumes NSX_USER is already set (typically via with_cluster_creds).
+#
+#   Env flags (read by caller; passed via env):
+#     NSX_DRY_RUN=1    — print the plan, do not reboot.
+#     NSX_RESUME_FROM  — host IP to start from (skip earlier hosts in cluster).
+#     NSX_STATE_FILE   — if set, write "<idx>|<host_idx>|<ip>|<ts>" before
+#                        each reboot; remove on success.
 # ---------------------------------------------------------------------------
 rolling_reboot_cluster(){
   local idx="${1:?usage: rolling_reboot_cluster <idx>}"
@@ -271,16 +357,54 @@ rolling_reboot_cluster(){
 
   log_banner "[${label}] Rolling reboot — ${#hosts[@]} host(s)"
 
+  local resume_from="${NSX_RESUME_FROM:-}"
+  local skipping=false
+  if [[ -n "${resume_from}" ]]; then
+    skipping=true
+    log_warn "[${label}] resume mode: skipping until host '${resume_from}' is reached."
+  fi
+
   local i last=$(( ${#hosts[@]} - 1 ))
   for i in "${!hosts[@]}"; do
     local ip="${hosts[$i]}"
+
+    if "${skipping}"; then
+      if [[ "${ip}" == "${resume_from}" ]]; then
+        skipping=false
+        log "[${label}] resume: starting at ${ip}."
+      else
+        log "[${label}] resume: skipping ${ip} (already done in previous run)."
+        continue
+      fi
+    fi
+
+    if [[ "${NSX_DRY_RUN:-0}" == "1" ]]; then
+      log "[DRY-RUN] [${label}] would reboot ${ip} ($((i+1))/${#hosts[@]})"
+      if (( i < last )); then
+        log "[DRY-RUN] [${label}] would then sleep ${NSX_REBOOT_INTERVAL}s"
+      fi
+      continue
+    fi
+
+    # Resume bookkeeping
+    if [[ -n "${NSX_STATE_FILE:-}" ]]; then
+      printf '%s|%s|%s|%s\n' "${idx}" "${i}" "${ip}" "$(date +%s)" > "${NSX_STATE_FILE}"
+    fi
+
     log "[${label}] reboot ${ip} ($((i+1))/${#hosts[@]})"
     reboot_manager_and_wait "${ip}" || log_err "[${label}] ${ip}: reboot cycle error"
+
     if (( i < last )); then
       log "[${label}] sleeping ${NSX_REBOOT_INTERVAL}s before next host..."
       sleep "${NSX_REBOOT_INTERVAL}"
     fi
   done
 
+  if "${skipping}"; then
+    log_warn "[${label}] resume target '${resume_from}' not found in this cluster — nothing done."
+  fi
+
   log_ok "[${label}] rolling reboot done."
+  # Clear state once a cluster finishes cleanly.
+  [[ -n "${NSX_STATE_FILE:-}" && -f "${NSX_STATE_FILE}" ]] && rm -f "${NSX_STATE_FILE}"
 }
