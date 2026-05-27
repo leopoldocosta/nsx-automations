@@ -13,25 +13,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install shellcheck
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
-
-      - name: Run shellcheck on all .sh files
-        run: |
-          # Exclusions explained:
-          #   SC1091 — sourced libs aren't on disk at lint time (REPO_ROOT path)
-          #   SC2155 — `local x=$(cmd)` style; we use `|| true` and other
-          #            guards instead of relying on the return code
-          #   SC2034 — vars defined in lib for downstream automations
-          #   SC2086 — word-splitting is intentional in a couple of places
-          #            (e.g. `for item in ${val//,/ }`); the parser also
-          #            validates each item against a strict regex
-          #   SC2317 — defensive `:` in case arms — flagged as unreachable
-          find . -type f -name '*.sh' -not -path './.git/*' -print0 \
-            | xargs -0 shellcheck -x -e SC1091,SC2155,SC2034,SC2086,SC2317 \
-            --severity=warning
+      # ludeeus/action-shellcheck annotates findings line-by-line in the
+      # GitHub UI, so failures are visible without downloading raw logs.
+      # Exclusions:
+      #   SC1091 — sourced libs not on disk at lint time (REPO_ROOT layout)
+      #   SC2155 — `local x=$(cmd)` style; we guard with `|| true` instead
+      #   SC2034 — vars exposed by lib/ for downstream automations
+      #   SC2086 — a few intentional word-splits (parser hosts loop) are
+      #            already validated against a strict regex
+      #   SC2317 — defensive `:` arms in case statements
+      - name: shellcheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        env:
+          SHELLCHECK_OPTS: -x -e SC1091,SC2155,SC2034,SC2086,SC2317
+        with:
+          severity: warning
+          scandir: '.'
+          additional_files: ''
+          ignore_paths: '.git'
 
   bats:
     name: Bats tests
