@@ -1,0 +1,47 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck on all .sh files
+        run: |
+          # External libs are sourced at runtime; -x follows them.
+          # SC1091 = "Not following: file not found at lint time" — common for
+          # sourced libs found via REPO_ROOT — silenced as it's a false positive
+          # in this repo layout.
+          find . -type f -name '*.sh' -not -path './.git/*' -print0 \
+            | xargs -0 shellcheck -x -e SC1091
+
+  bats:
+    name: Bats tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bats
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats
+
+      - name: Run bats tests
+        run: |
+          if [ -d tests ]; then
+            bats tests/
+          else
+            echo "No tests/ directory — skipping."
+          fi

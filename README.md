@@ -109,6 +109,40 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 - Root SSH on Edges enabled only during execution, disabled at the end
 - `_sshpass_safe` writes passwords to a tmp file (mode 600), never to process args
 - Real host lists (`*.txt`, `managers.conf`) are git-ignored — only `.example` templates are committed
+- `managers.conf` parser rejects shell metacharacters in `hosts =` and `admin_user =` entries
+
+## Requirements
+
+| Component        | Supported                                                          |
+|------------------|--------------------------------------------------------------------|
+| Bash             | 4.3+ (uses `declare -n` namerefs, `mapfile`, `${var,,}`)           |
+| NSX-T            | 3.x and 4.x (Edge Nodes + Managers)                                |
+| Jump host OS     | Ubuntu / Debian / RHEL / Rocky / Alma / Fedora / SLES / openSUSE   |
+| Jump host deps   | `ssh`, `sshpass` (only if no SSH key is registered), `curl` (opt.) |
+| Network          | Outbound TCP/22 to each NSX node; outbound HTTPS for webhook (opt.)|
+
+> **macOS note:** ships with Bash 3.2 — install Bash 4.3+ via `brew install bash` to run these scripts locally.
+
+## Environment variables
+
+Opt-in tunables, all unset by default:
+
+| Variable                      | Effect                                                          |
+|-------------------------------|-----------------------------------------------------------------|
+| `NSX_DEBUG=1`                 | Let SSH stderr through (host-key / auth troubleshooting)        |
+| `NSX_REBOOT_INTERVAL`         | Seconds between managers in a rolling reboot (default 3600)     |
+| `NSX_REBOOT_MAX_WAIT`         | TCP down/up timeout per host (default 900)                      |
+| `NSX_CLUSTER_STABLE_TIMEOUT`  | Cluster `STABLE` poll budget post-reboot (default 600)          |
+| `NSX_CLUSTER_STABLE_INTERVAL` | Cluster `STABLE` poll interval (default 15)                     |
+| `NSX_SKIP_CLUSTER_GATE=1`     | Skip the STABLE gate after reboot (NOT recommended in prod)     |
+| `NSX_LOG_RETENTION_DAYS`      | Days kept by `rotate_logs` (default 30)                         |
+| `NSX_NOTIFY_WEBHOOK`          | Slack/Teams-compatible URL — posts on `log_err`                 |
+| `NSX_BUNDLE_RECENT_DAYS`      | "Recent" threshold for support-bundle precheck (default 7)      |
+
+## Versioning
+
+See [CHANGELOG.md](CHANGELOG.md). The project follows [SemVer](https://semver.org/):
+breaking changes to the `lib/` API bump the major version.
 
 ## License
 
