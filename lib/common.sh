@@ -46,10 +46,10 @@ if [[ -t 1 ]]; then
   C_RESET=$'\033[0m';   C_BOLD=$'\033[1m'
   C_GREEN=$'\033[0;32m'; C_YELLOW=$'\033[0;33m'
   C_RED=$'\033[0;31m';   C_CYAN=$'\033[0;36m'
-  C_BLUE=$'\033[0;34m';  C_MAGENTA=$'\033[0;35m'
+  C_BLUE=$'\033[0;34m'
 else
   C_RESET=''; C_BOLD=''; C_GREEN=''; C_YELLOW=''
-  C_RED='';   C_CYAN=''; C_BLUE='';  C_MAGENTA=''
+  C_RED='';   C_CYAN=''; C_BLUE=''
 fi
 
 # ---------------------------------------------------------------------------

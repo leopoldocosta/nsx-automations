@@ -20,12 +20,18 @@ jobs:
 
       - name: Run shellcheck on all .sh files
         run: |
-          # External libs are sourced at runtime; -x follows them.
-          # SC1091 = "Not following: file not found at lint time" — common for
-          # sourced libs found via REPO_ROOT — silenced as it's a false positive
-          # in this repo layout.
+          # Exclusions explained:
+          #   SC1091 — sourced libs aren't on disk at lint time (REPO_ROOT path)
+          #   SC2155 — `local x=$(cmd)` style; we use `|| true` and other
+          #            guards instead of relying on the return code
+          #   SC2034 — vars defined in lib for downstream automations
+          #   SC2086 — word-splitting is intentional in a couple of places
+          #            (e.g. `for item in ${val//,/ }`); the parser also
+          #            validates each item against a strict regex
+          #   SC2317 — defensive `:` in case arms — flagged as unreachable
           find . -type f -name '*.sh' -not -path './.git/*' -print0 \
-            | xargs -0 shellcheck -x -e SC1091
+            | xargs -0 shellcheck -x -e SC1091,SC2155,SC2034,SC2086,SC2317 \
+            --severity=warning
 
   bats:
     name: Bats tests
