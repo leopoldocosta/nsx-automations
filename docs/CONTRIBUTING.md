@@ -64,34 +64,52 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full list. Highlights:
 - `load_ips` / `HOST_IPS[@]`
 - `ask_admin_creds`, `reprompt_admin_creds`, `clear_creds`, `confirm_clear_creds_with_timeout`
 - `ssh_admin`, `admin_cmd`
+- `ssh_admin_retry <ip> <cmd> [retries] [base]` — linear-backoff wrapper for read-only commands
 - `tcp_check`
-- `log`/`log_ok`/`log_warn`/`log_err`/`log_banner`
+- `log`/`log_ok`/`log_warn`/`log_err`/`log_banner` (log_err honors `NSX_NOTIFY_WEBHOOK`)
 - `tbl_header`, `tbl_row`, `tbl_footer`
 - `parse_uptime_days`, `parse_version_short`
 - `install_crontab_line`, `remove_crontab_line`
 - `ensure_local_ssh_key`
 - `save_session_env`, `load_session_env`, `auto_clear_session_after`
+- `rotate_logs [days] [dir]` — call once at the end of the run; honors `NSX_LOG_RETENTION_DAYS`
+- `_ssh_stderr_redir` — internal; honored by `ssh_admin`/`ssh_root` via `NSX_DEBUG`
 
 ### Edge (`lib/nsx_edge.sh`)
 - `enable_root_ssh` / `disable_root_ssh`
 - `ssh_root`, `root_cmd`, `ask_root_creds`
 - `request_support_bundle`, `check_support_bundle`, `list_remote_bundles`
 - `bundle_file_date`, `bundle_duration`
+- `precheck_bundle_for <ip>` — shared classifier; returns via `PCR_STATUS`, `PCR_ACTION`, `PCR_FILE`, `PCR_SKIP`, `PCR_DURATION`, `PCR_TOTAL`
 - `try_admin_ssh_with_retry`
-- `register_edge_admin_key`, `register_edge_root_key`
+- `register_edge_admin_key`, `register_edge_root_key` — return 0/1; distinguish "already registered" from "newly registered"
 
 ### Manager (`lib/nsx_manager.sh`)
 - `parse_managers_conf`, `cluster_hosts`, `cluster_admin_user`
 - `ask_cluster_creds`, `with_cluster_creds`
-- `reboot_manager_and_wait`, `rolling_reboot_cluster`
-- `register_manager_admin_key`, `test_ssh_admin`
+- `reboot_manager_and_wait` (gates on `wait_cluster_stable` after TCP comes back)
+- `wait_cluster_stable <ip> [timeout] [interval]` — poll `get cluster status` for STABLE; bypass with `NSX_SKIP_CLUSTER_GATE=1`
+- `rolling_reboot_cluster` — honors `NSX_DRY_RUN`, `NSX_RESUME_FROM`, `NSX_STATE_FILE` env contracts
+- `register_manager_admin_key <ip> <pub_val> [label] [key_type]` — `key_type` defaults to `ssh-rsa`; use `ssh-ed25519` for ed25519 keys
+- `test_ssh_admin`
 - `get_cluster_status`, `get_managers`
 
 ## Step 6 — README for your automation
 
 Document: purpose, workflow, prerequisites, usage example. Look at `automations/kb404700_disk_validation/README.md` for a concise reference.
 
-## Step 7 — Commit
+## Step 7 — Tests (if you added a pure parser)
+
+Pure parsers (no SSH / no network) belong in `tests/test_parsers.bats`. To run locally:
+
+```bash
+sudo apt-get install -y bats   # or `brew install bats-core`
+bats tests/
+```
+
+CI runs the bats suite + shellcheck on every push/PR (`.github/workflows/lint.yml`).
+
+## Step 8 — Commit
 
 ```bash
 git add automations/<your_automation_name>/

@@ -12,9 +12,10 @@
 #                               manager uses `set user ... ssh-keys label ... value ...`.
 #   --hosts <file>              For edge: a flat text file of IPs.
 #                               For manager: an INI managers.conf (multi-cluster).
-#   --key <path>                Local SSH private key. Default: ~/.ssh/id_rsa
-#                               (rsa for manager — required by NSX CLI;
-#                                ed25519 also works for edge).
+#   --key <path>                Local SSH private key. Default: ~/.ssh/id_rsa.
+#                               Key type (ssh-rsa, ssh-ed25519, ...) is auto-
+#                               detected from the .pub header and passed through
+#                               to the NSX CLI, so both RSA and ed25519 work.
 #   --label <text>              Label used in `set user ... ssh-keys label ...`
 #                               (manager only). Default: nsx-automation-key
 set -euo pipefail

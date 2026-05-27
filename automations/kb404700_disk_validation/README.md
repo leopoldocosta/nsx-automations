@@ -48,8 +48,16 @@ The script:
 - `logs/kb404700_run_YYYYMMDD_HHMMSS.log`     — full execution log
 - `logs/kb404700_report_YYYYMMDD_HHMMSS.txt`  — final report (also printed)
 
+## Tunables
+
+| Var | Default | Effect |
+|---|---|---|
+| `NSX_LOG_RETENTION_DAYS` | `30` | Days of `logs/` kept after each run |
+| `NSX_DEBUG` | _(unset)_ | `1` surfaces SSH stderr (auth/host-key troubleshooting) |
+| `NSX_NOTIFY_WEBHOOK` | _(unset)_ | Slack/Teams URL — each `log_err` is posted |
+
 ## Dependencies
 
 Scripts source:
-- `lib/common.sh`   — log, IPs, sshpass-safe, NSX-CLI parsers, timed-confirm
+- `lib/common.sh`   — log, IPs, sshpass-safe, NSX-CLI parsers, timed-confirm, `rotate_logs`
 - `lib/nsx_edge.sh` — root SSH toggle, retry-on-auth-failure helper

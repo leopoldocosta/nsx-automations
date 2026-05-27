@@ -41,8 +41,17 @@ screen -S nsx_sb
 ./nsx_ssh_cli.sh
 ```
 
+## Tunables
+
+| Var | Default | Effect |
+|---|---|---|
+| `NSX_BUNDLE_RECENT_DAYS` | `7` | A bundle younger than this is considered "recent" and generation is skipped |
+| `NSX_LOG_RETENTION_DAYS` | `30` | Days of `logs/` kept after each run |
+| `NSX_DEBUG` | _(unset)_ | `1` surfaces SSH stderr |
+| `NSX_NOTIFY_WEBHOOK` | _(unset)_ | Slack/Teams URL — each `log_err` is posted |
+
 ## Dependencies
 
 Scripts source:
-- `lib/common.sh`   — log, IPs, sshpass-safe, session cache, table helpers
-- `lib/nsx_edge.sh` — root SSH toggle, support bundle helpers
+- `lib/common.sh`   — log, IPs, sshpass-safe, session cache, table helpers, `rotate_logs`
+- `lib/nsx_edge.sh` — root SSH toggle, support bundle helpers, `precheck_bundle_for`

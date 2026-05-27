@@ -9,13 +9,21 @@ Refactored from `nsx-rolling-reboot/deploy_nsx_v14.sh`. Supports **multi-cluster
 ```
 nsx_rolling_reboot.sh
   ├── Parses managers.conf (multi-cluster, INI-style)
+  ├── (optional) loads run/rolling_state for --resume
   ├── For each cluster:
   │     For each host in cluster:
+  │       ├── write run/rolling_state (cluster_idx | host_idx | ip | ts)
   │       ├── ssh_admin "$ip" "reboot"
-  │       ├── wait for TCP/22 to drop
-  │       └── wait for TCP/22 to return
+  │       ├── wait for TCP/22 to drop          (NSX_REBOOT_MAX_WAIT)
+  │       ├── wait for TCP/22 to return        (NSX_REBOOT_MAX_WAIT)
+  │       └── poll `get cluster status` until STABLE
+  │                (NSX_CLUSTER_STABLE_TIMEOUT, bypass with
+  │                 NSX_SKIP_CLUSTER_GATE=1)
   │       (sleep NSX_REBOOT_INTERVAL between hosts)
-  └── Lock file in /tmp prevents overlapping crontab runs.
+  ├── On clean cluster completion: rm run/rolling_state
+  ├── log_err → optional POST to NSX_NOTIFY_WEBHOOK
+  └── Lock file in /tmp prevents overlapping crontab runs
+       (lock is skipped in --dry-run).
 ```
 
 ## Setup
@@ -36,11 +44,20 @@ The `configure_ssh_keys.sh` step generates `~/.ssh/id_rsa` if needed, then regis
 ## Run
 
 ```bash
-# Validate
-./test_reboot_single.sh 192.168.20.10    # safe test on one host
+# Validate a single host (always safe to repeat)
+./test_reboot_single.sh 192.168.20.10
 
-# Production — runs the full multi-cluster cycle
+# Preview — show the reboot plan without acting on anything
+./nsx_rolling_reboot.sh --dry-run
+
+# Production — full multi-cluster cycle
 ./nsx_rolling_reboot.sh
+
+# Resume after a crash / killed cron — picks up from run/rolling_state
+./nsx_rolling_reboot.sh --resume
+
+# Manual override (skips earlier hosts in the FIRST cluster, then continues)
+./nsx_rolling_reboot.sh --resume-from 192.168.20.11
 
 # Install crontab
 ./install_crontab.sh           # day 1 of every month at 02:00
@@ -54,8 +71,15 @@ The `configure_ssh_keys.sh` step generates `~/.ssh/id_rsa` if needed, then regis
 |---|---|---|
 | `MANAGERS_CONF` | `./managers.conf` | Path to the cluster config |
 | `LOCK_FILE` | `/tmp/nsx_rolling_reboot.lock` | Lock file path |
+| `STATE_FILE` | `run/rolling_state` | Resume bookkeeping; auto-removed on clean cluster completion |
 | `NSX_REBOOT_INTERVAL` | `3600` | Seconds between manager reboots |
-| `NSX_REBOOT_MAX_WAIT` | `900` | Max seconds waiting for down or up |
+| `NSX_REBOOT_MAX_WAIT` | `900` | Max seconds waiting for TCP down or up |
+| `NSX_CLUSTER_STABLE_TIMEOUT` | `600` | Max seconds polling `get cluster status` for STABLE |
+| `NSX_CLUSTER_STABLE_INTERVAL` | `15` | Poll interval for STABLE |
+| `NSX_SKIP_CLUSTER_GATE` | _(unset)_ | Set to `1` to skip the STABLE gate (NOT recommended in prod) |
+| `NSX_LOG_RETENTION_DAYS` | `30` | Days kept by `rotate_logs` at the end of each run |
+| `NSX_NOTIFY_WEBHOOK` | _(unset)_ | If set, every `log_err` POSTs to this Slack/Teams-compatible URL |
+| `NSX_DEBUG` | _(unset)_ | Set to `1` to surface SSH stderr (auth/host-key troubleshooting) |
 | `ADMIN_KEY` | `~/.ssh/id_rsa` | Private key used by `ssh_admin` |
 
 ## Logs

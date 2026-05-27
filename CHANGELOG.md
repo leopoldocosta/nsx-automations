@@ -43,6 +43,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   `rm` / `-rf` from `hosts =` and `admin_user =` values.
 - `bin/deploy.sh`: removed `eval`-based command construction.
 
+### Changed (cleanup)
+- PT→EN refactor: globals renamed for consistency across the codebase.
+  - `PC_ACAO` → `PC_ACTION`, `PC_DURACAO` → `PC_DURATION`
+  - `PCR_ACAO` → `PCR_ACTION`, `PCR_DURACAO` → `PCR_DURATION`
+  - `nsx_ssh_cli.sh`: drop bilingual builtins `nos` / `historico`
+    (English `nodes` / `history` only).
+  - `docs/ARCHITECTURE.md` Principle 1 reworded in English.
+- Docs sync sweep: `docs/MANUAL.md`, `docs/CONTRIBUTING.md`, the per-automation
+  READMEs, and `bin/configure_ssh_keys.sh` header brought in line with the
+  new helpers, env vars, and flags (`--dry-run`, `--resume`,
+  cluster STABLE gate, `rotate_logs`, `NSX_NOTIFY_WEBHOOK`, `NSX_DEBUG`).
+
 ## [1.0.0] — initial unified release
 
 Merged the two source repos into a single layered toolkit:
