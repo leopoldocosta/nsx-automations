@@ -55,14 +55,14 @@ root_cmd(){ local ip="$1" cmd="$2"; ssh_root "$ip" "$cmd"; }
 enable_root_ssh(){
   local ip="$1"
   log "${ip}: enabling root SSH..."
-  admin_cmd "$ip" 'set service ssh root-login enabled' 2>/dev/null || true
+  admin_cmd "$ip" 'set ssh root-login' 2>/dev/null || true
   log "${ip}: [set ssh root-login] done"
 }
 
 disable_root_ssh(){
   local ip="$1"
   log "${ip}: disabling root SSH..."
-  admin_cmd "$ip" 'set service ssh root-login disabled' 2>/dev/null || true
+  admin_cmd "$ip" 'clear ssh root-login' 2>/dev/null || true
   log "${ip}: [clear ssh root-login] done"
 }
 
