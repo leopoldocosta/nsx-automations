@@ -2,6 +2,11 @@
 
 General notes that apply across all automations.
 
+> **New automation?** It stays in Bash by default. It only moves to Go (not Python) when it
+> hits a concurrency / heavy-REST / complex-state / volume trigger — see
+> [ARCHITECTURE.md → Language strategy](ARCHITECTURE.md#language-strategy-bash-by-default-go-on-demand)
+> and [GO_FRAMEWORK.md](GO_FRAMEWORK.md).
+
 ## Folder convention
 
 ```

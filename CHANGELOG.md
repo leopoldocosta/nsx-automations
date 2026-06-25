@@ -8,6 +8,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Documented **language strategy**: Bash by default, Go on demand. New
+  `docs/GO_FRAMEWORK.md` defines the Go stack (`golang.org/x/crypto/ssh`,
+  `errgroup` + semaphore, `cobra`, `gopkg.in/ini.v1`, `net/http`, `log/slog`)
+  and layout to use **when** a future automation crosses a concurrency / heavy-REST /
+  complex-state / volume trigger. Existing Bash code is unchanged.
+  `docs/ARCHITECTURE.md` gained the corresponding trigger table and the
+  "Go, not Python" rationale; `docs/MANUAL.md` got a top-of-file pointer.
 - New automation `edge_hardware_inventory/`: collects Dell PowerEdge model and
   Service Tag from each Edge Node via `dmidecode` over root SSH. Produces both
   a human-readable `.txt` report and a `.csv` side-output. Flags VM edges as

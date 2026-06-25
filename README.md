@@ -48,7 +48,8 @@ nsx-automations/
 ├── docs/
 │   ├── MANUAL.md
 │   ├── CONTRIBUTING.md
-│   └── ARCHITECTURE.md
+│   ├── ARCHITECTURE.md
+│   └── GO_FRAMEWORK.md       # language strategy reference (Bash default, Go on demand)
 │
 ├── examples/
 │   ├── edge_nodes.example

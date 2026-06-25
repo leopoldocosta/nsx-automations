@@ -99,3 +99,35 @@ When credentials are needed per cluster:
 | Only meaningful for one automation | inside that automation's folder |
 
 If you write the same helper twice across two automations, that's the cue to promote it to the appropriate `lib/`.
+
+## Language strategy: Bash by default, Go on demand
+
+Bash is the default and the existing toolkit stays in Bash. It is the right tool for what
+this repo does today: sequential SSH against a handful of hosts, interactive
+credential-driven flows, and glue over `ssh`/`awk`/`sed`/`crontab`. The current code is
+tested (BATS), hardened, and stable — it is not rewritten.
+
+A **new** automation moves to **Go** (not Python) only when it hits **at least one** of
+these triggers:
+
+| Trigger | Why Bash struggles | What Go gives |
+|---|---|---|
+| **Real concurrency** — act on many nodes in parallel (e.g. reboot/collect across 50+ edges at once, with a parallelism cap and aggregated errors) | `&`/`wait`/`xargs -P` is fragile, no clean error aggregation | goroutines + `errgroup` + a semaphore channel |
+| **Heavy REST** — primarily talks to the NSX Policy/Manager API (pagination, retry/backoff, structured JSON, typed payloads) | `curl` + `awk` doesn't scale or type | `net/http` + structs + `encoding/json` |
+| **Complex state** — non-trivial state machine, transactional resume, checkpointed idempotency | Bash state files don't get unit tests or types | typed state + real unit tests |
+| **Performance/volume** — parsing/aggregating thousands of lines | `fork`+`pipe` overhead | native, fast |
+
+If **none** apply (sequential SSH, few hosts, interactive flow), it **stays in Bash**.
+
+**Why Go and not Python:** for a jump-host, SSH-heavy toolkit running across heterogeneous
+distros, Go ships a single static binary (`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build`)
+with **zero runtime dependencies** — cross-compile once, `scp` it, run it like a `.sh`. No
+interpreter, no venv, no pip. "Recompiling every run" is a myth: you compile once on the
+dev machine. Go also aligns with the surrounding infra ecosystem (Terraform, kubectl, NSX
+SDK are all Go).
+
+When the first trigger fires, Go code lands in a new `go/` tree (`cmd/<automation>` +
+`internal/{nsxssh,config,nsxapi,notify}`), **isolated from the Bash `lib/`**. Parity with
+the Bash helpers is built on demand — only what that first automation needs — and the
+`managers.conf` parser must preserve the same anti-injection validation as
+`parse_managers_conf`. See [GO_FRAMEWORK.md](GO_FRAMEWORK.md) for the chosen stack.
