@@ -8,6 +8,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- New automation `edge_hardware_inventory/`: collects Dell PowerEdge model and
+  Service Tag from each Edge Node via `dmidecode` over root SSH. Produces both
+  a human-readable `.txt` report and a `.csv` side-output. Flags VM edges as
+  `NOT_DELL` and missing/placeholder service tags as `MISSING_TAG`.
 - `NSX_DEBUG=1` env var to surface SSH stderr (was unconditionally silenced).
 - `wait_cluster_stable` polls `get cluster status` post-reboot; integrated into
   `reboot_manager_and_wait`. Bypass with `NSX_SKIP_CLUSTER_GATE=1`.
