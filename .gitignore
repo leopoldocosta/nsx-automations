@@ -8,7 +8,11 @@ run/
 edge_nodes.txt
 managers.txt
 managers.conf
+datacenters.conf
 hosts.txt
+
+# ===== Multi-DC orchestrator output (pulled logs) =====
+aggregated_logs/
 
 # ===== Credentials, keys, configs with secrets =====
 .ssh_keys/

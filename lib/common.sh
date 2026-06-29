@@ -430,6 +430,147 @@ ssh_admin_retry(){
 }
 
 # ---------------------------------------------------------------------------
+# Multi-datacenter inventory parser (INI-style sections)
+#
+#   parse_datacenters_conf <file>
+#
+# Schema per section:
+#   [DC-LABEL]
+#   jump_host = <fqdn-or-ip>          # required
+#   jump_user = <username>            # required
+#   repo_path = </abs/path/on/jump>   # required (where nsx-automations is checked out)
+#   ssh_key   = </abs/path/on/orchestrator>   # optional; default ~/.ssh/nsx_dc_fanout
+#
+# Populates globals:
+#   DC_COUNT                  - number of datacenters
+#   DC_LABELS[i]              - the section name
+#   DC_JUMP_HOST_<i>          - jump host (validated against IPv4 OR FQDN-like)
+#   DC_JUMP_USER_<i>          - SSH user (validated against [A-Za-z0-9._-]+)
+#   DC_REPO_PATH_<i>          - absolute path to the toolkit on the jump
+#   DC_SSH_KEY_<i>            - private key to use for orchestrator->jump SSH
+#
+# Defensive: rejects shell metacharacters in every field — the values flow
+# into ssh/rsync command lines on the orchestrator.
+# ---------------------------------------------------------------------------
+parse_datacenters_conf(){
+  local file="${1:?usage: parse_datacenters_conf <file>}"
+  [[ -f "${file}" ]] || { log_err "Datacenters config not found: ${file}"; return 1; }
+
+  unset DC_LABELS
+  declare -ga DC_LABELS=()
+  DC_COUNT=0
+
+  local current_idx=-1 current_label=""
+  local line key val
+  local default_key="${NSX_FANOUT_KEY:-${HOME}/.ssh/nsx_dc_fanout}"
+
+  # Acceptors
+  local re_ipv4='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
+  local re_fqdn='^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$'
+  local re_user='^[A-Za-z0-9._-]+$'
+  local re_abspath='^/[A-Za-z0-9._/~-]+$'      # / + harmless chars; we also accept ~ for $HOME-style
+  local re_key_path='^[~/][A-Za-z0-9._/~-]*$'  # absolute OR ~-relative
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    # strip comments and trim
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "${line}" ]] && continue
+
+    if [[ "${line}" =~ ^\[(.+)\]$ ]]; then
+      current_idx=$(( current_idx + 1 ))
+      current_label="${BASH_REMATCH[1]}"
+      DC_LABELS[$current_idx]="${current_label}"
+      # default ssh_key (overridable per-section)
+      declare -g "DC_SSH_KEY_${current_idx}=${default_key}"
+      # clear required fields so we can validate later
+      declare -g "DC_JUMP_HOST_${current_idx}="
+      declare -g "DC_JUMP_USER_${current_idx}="
+      declare -g "DC_REPO_PATH_${current_idx}="
+      continue
+    fi
+
+    if [[ "${current_idx}" -lt 0 ]]; then
+      log_warn "Ignoring line outside section: ${line}"
+      continue
+    fi
+
+    if [[ "${line}" =~ ^([a-zA-Z_]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      key="${BASH_REMATCH[1]}"
+      val="${BASH_REMATCH[2]}"
+      case "${key}" in
+        jump_host)
+          if [[ "${val}" =~ ${re_ipv4} ]] || [[ "${val}" =~ ${re_fqdn} && "${val}" == *.* ]]; then
+            declare -g "DC_JUMP_HOST_${current_idx}=${val}"
+          else
+            log_warn "Skipping invalid jump_host in [${current_label}]: ${val}"
+          fi
+          ;;
+        jump_user)
+          if [[ "${val}" =~ ${re_user} ]]; then
+            declare -g "DC_JUMP_USER_${current_idx}=${val}"
+          else
+            log_warn "Skipping invalid jump_user in [${current_label}]: ${val}"
+          fi
+          ;;
+        repo_path)
+          if [[ "${val}" =~ ${re_abspath} ]]; then
+            declare -g "DC_REPO_PATH_${current_idx}=${val}"
+          else
+            log_warn "Skipping invalid repo_path in [${current_label}]: ${val}"
+          fi
+          ;;
+        ssh_key)
+          if [[ "${val}" =~ ${re_key_path} ]]; then
+            declare -g "DC_SSH_KEY_${current_idx}=${val}"
+          else
+            log_warn "Skipping invalid ssh_key in [${current_label}]: ${val}"
+          fi
+          ;;
+        *)
+          log_warn "Unknown key '${key}' in [${current_label}]"
+          ;;
+      esac
+    fi
+  done < "${file}"
+
+  DC_COUNT=$(( current_idx + 1 ))
+  if [[ "${DC_COUNT}" -eq 0 ]]; then
+    log_err "No datacenters parsed from ${file}."
+    return 1
+  fi
+
+  # Required-field check
+  local i missing=0 host_var user_var repo_var key_var
+  for (( i=0; i<DC_COUNT; i++ )); do
+    host_var="DC_JUMP_HOST_${i}"
+    user_var="DC_JUMP_USER_${i}"
+    repo_var="DC_REPO_PATH_${i}"
+    if [[ -z "${!host_var}" || -z "${!user_var}" || -z "${!repo_var}" ]]; then
+      log_err "[${DC_LABELS[$i]}] missing required field(s): jump_host/jump_user/repo_path"
+      missing=$(( missing + 1 ))
+    fi
+  done
+  if (( missing > 0 )); then
+    return 1
+  fi
+
+  log_ok "Parsed ${DC_COUNT} datacenter(s) from ${file}:"
+  for (( i=0; i<DC_COUNT; i++ )); do
+    host_var="DC_JUMP_HOST_${i}"; user_var="DC_JUMP_USER_${i}"
+    repo_var="DC_REPO_PATH_${i}"; key_var="DC_SSH_KEY_${i}"
+    log "  [${DC_LABELS[$i]}] ${!user_var}@${!host_var}:${!repo_var}  (key: ${!key_var})"
+  done
+}
+
+# Helpers
+dc_jump_host(){ local v="DC_JUMP_HOST_${1}"; echo "${!v}"; }
+dc_jump_user(){ local v="DC_JUMP_USER_${1}"; echo "${!v}"; }
+dc_repo_path(){ local v="DC_REPO_PATH_${1}"; echo "${!v}"; }
+dc_ssh_key()  { local v="DC_SSH_KEY_${1}";   echo "${!v}"; }
+
+# ---------------------------------------------------------------------------
 # rotate_logs [days] [dir]
 #   Removes files under <dir> (default $LOG_DIR) older than <days> days
 #   (default $NSX_LOG_RETENTION_DAYS, default 30).
