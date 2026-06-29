@@ -8,6 +8,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Multi-datacenter fan-out** — a single orchestrator VM can now run any
+  automation in every datacenter without copying NSX credentials around.
+  - New `bin/run_across_datacenters.sh`: iterates `datacenters.conf`, opens
+    SSH to each jump VM with `BatchMode=yes`, `ForwardAgent=no`,
+    `IdentitiesOnly=yes`; captures stdout+stderr per DC; rsync-pulls the
+    automation's `logs/` back to `aggregated_logs/<ts>/<DC>/`; writes
+    `summary.csv` (`dc,start,end,duration_s,exit_code,log_path`).
+    Supports `--parallel N` (uses `wait -n`, no `xargs -P` fragility),
+    `--no-pull-logs`, `--out <dir>`, `--ssh-key <override>`, and `--`
+    pass-through to the remote automation (e.g. `-- --dry-run`).
+  - `bin/deploy.sh --all-dcs --conf <file>`: deploy the toolkit to every
+    jump in `datacenters.conf` in one command. Single-target mode kept.
+  - New `parse_datacenters_conf` + `dc_jump_host/dc_jump_user/dc_repo_path/dc_ssh_key`
+    in `lib/common.sh`. Strict regex validation of every field rejects
+    shell metacharacters (covered by `tests/test_datacenters_parser.bats`,
+    9 asserts including path-traversal and `$()` injection).
+  - New `docs/MULTIDC.md`: topology diagram, security principles,
+    one-time setup, schema, CLI reference, and the trigger for moving to
+    Go (links to `GO_FRAMEWORK.md`).
+  - `datacenters.conf` is git-ignored; `datacenters.conf.example` committed.
+  - `aggregated_logs/` added to `.gitignore`.
 - Documented **language strategy**: Bash by default, Go on demand. New
   `docs/GO_FRAMEWORK.md` defines the Go stack (`golang.org/x/crypto/ssh`,
   `errgroup` + semaphore, `cobra`, `gopkg.in/ini.v1`, `net/http`, `log/slog`)

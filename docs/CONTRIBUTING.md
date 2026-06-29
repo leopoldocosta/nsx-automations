@@ -69,6 +69,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full list. Highlights:
 - `log`/`log_ok`/`log_warn`/`log_err`/`log_banner` (log_err honors `NSX_NOTIFY_WEBHOOK`)
 - `tbl_header`, `tbl_row`, `tbl_footer`
 - `parse_uptime_days`, `parse_version_short`
+- `parse_datacenters_conf <file>` + `dc_jump_host/dc_jump_user/dc_repo_path/dc_ssh_key <idx>` — INI parser for the multi-DC orchestrator; same anti-injection validation as `parse_managers_conf`
 - `install_crontab_line`, `remove_crontab_line`
 - `ensure_local_ssh_key`
 - `save_session_env`, `load_session_env`, `auto_clear_session_after`

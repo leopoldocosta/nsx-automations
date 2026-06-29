@@ -37,8 +37,9 @@ nsx-automations/
 │   └── nsx_manager.sh      # multi-cluster parser, reboot+wait, key registration
 │
 ├── bin/
-│   ├── deploy.sh                   # copy lib/ + bin/ + automations/ to a target host
-│   └── configure_ssh_keys.sh       # one-shot SSH-key registration (edge or manager)
+│   ├── deploy.sh                   # copy lib/ + bin/ + automations/ to a target host (or --all-dcs)
+│   ├── configure_ssh_keys.sh       # one-shot SSH-key registration (edge or manager)
+│   └── run_across_datacenters.sh   # fan-out an automation to every DC, pull logs back
 │
 ├── automations/
 │   ├── edge_support_bundle/        # SB workflow (main + precheck + interactive CLI)
@@ -49,12 +50,14 @@ nsx-automations/
 │   ├── MANUAL.md
 │   ├── CONTRIBUTING.md
 │   ├── ARCHITECTURE.md
+│   ├── MULTIDC.md            # hub-and-spoke topology + datacenters.conf schema
 │   └── GO_FRAMEWORK.md       # language strategy reference (Bash default, Go on demand)
 │
 ├── examples/
 │   ├── edge_nodes.example
 │   └── managers.conf.example
 │
+├── datacenters.conf.example  # inventory for run_across_datacenters / deploy --all-dcs
 └── .gitignore
 ```
 
@@ -84,6 +87,23 @@ cp <hosts>.example <hosts>.txt           # or managers.conf
 vim <hosts>.txt
 ./<main_script>.sh
 ```
+
+## Multi-datacenter
+
+Run any automation in every datacenter from a single orchestrator VM (one
+local jump per DC, NSX credentials never leave the DC they belong to):
+
+```bash
+cp datacenters.conf.example datacenters.conf      # one [DC-X] section per DC
+vim datacenters.conf
+
+./bin/deploy.sh --all-dcs --conf ./datacenters.conf       # sync code to every jump
+./bin/run_across_datacenters.sh                            \
+    --conf ./datacenters.conf                              \
+    --automation manager_rolling_reboot/nsx_rolling_reboot.sh
+```
+
+See [docs/MULTIDC.md](docs/MULTIDC.md) for the topology, security model, and full CLI reference.
 
 ## Top-level helpers (optional)
 

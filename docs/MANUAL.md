@@ -6,6 +6,9 @@ General notes that apply across all automations.
 > hits a concurrency / heavy-REST / complex-state / volume trigger — see
 > [ARCHITECTURE.md → Language strategy](ARCHITECTURE.md#language-strategy-bash-by-default-go-on-demand)
 > and [GO_FRAMEWORK.md](GO_FRAMEWORK.md).
+>
+> **Running across multiple datacenters?** See [MULTIDC.md](MULTIDC.md) — one orchestrator
+> VM fans out to per-DC jump VMs; NSX credentials never leave the DC they belong to.
 
 ## Folder convention
 
