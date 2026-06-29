@@ -54,10 +54,14 @@ setup() {
 
 @test "parse_datacenters_conf: rejects shell-meta in every field (defense in depth)" {
   # All four fields in [BAD] are injection attempts. Parser must reject them.
-  # Since jump_host/jump_user/repo_path are required, the parser should return 1
-  # (missing required fields after rejection).
-  run parse_datacenters_conf "${REPO_ROOT}/tests/fixtures/datacenters_malformed.conf"
-  [ "${status}" -ne 0 ]
+  # Since jump_host/jump_user/repo_path are required, the parser returns 1.
+  # We invoke directly (NOT via `run`) so the DC_* globals it sets stay in
+  # this shell for the asserts below. set +e/-e guards `set -euo pipefail`.
+  set +e
+  parse_datacenters_conf "${REPO_ROOT}/tests/fixtures/datacenters_malformed.conf" >/dev/null 2>&1
+  local rc=$?
+  set -e
+  [ "${rc}" -ne 0 ]
 
   # And none of the malicious values should have been stored.
   [[ "$(dc_jump_host 0)" != *";"*    ]]
