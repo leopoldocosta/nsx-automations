@@ -9,6 +9,7 @@ edge_nodes.txt
 managers.txt
 managers.conf
 datacenters.conf
+reboot_plan.conf
 hosts.txt
 
 # ===== Multi-DC orchestrator output (pulled logs) =====

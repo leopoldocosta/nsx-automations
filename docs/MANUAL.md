@@ -93,22 +93,30 @@ hosts = 192.168.30.10, 192.168.30.11, 192.168.30.12
 admin_user = admin
 ```
 
-`nsx_rolling_reboot.sh` iterates each cluster in order, reboots each host sequentially honoring `NSX_REBOOT_INTERVAL` (default 3600s). After TCP comes back, the script polls `get cluster status` on the host until the cluster reports `STABLE` (`NSX_CLUSTER_STABLE_TIMEOUT`, default 600s) before moving to the next host — TCP up does **not** mean the cluster has reconciled. Bypass with `NSX_SKIP_CLUSTER_GATE=1` only when investigating. A single global lock file prevents overlapping crontab runs.
+`nsx_rolling_reboot.sh` iterates each cluster in order, reboots each host sequentially honoring `NSX_REBOOT_INTERVAL` (default 3600s). After TCP comes back, the script polls `get cluster status` on the host until the cluster reports `STABLE` (`NSX_CLUSTER_STABLE_TIMEOUT`, default 600s) before moving to the next host — TCP up does **not** mean the cluster has reconciled. Bypass with `NSX_SKIP_CLUSTER_GATE=1` only when investigating. A single global lock file prevents overlapping runs.
 
-The script supports `--dry-run` (preview only), `--resume` (continue from `run/rolling_state` after a crash) and `--resume-from <ip>` (manual override). See `automations/manager_rolling_reboot/README.md` for details.
+Flags:
+- `--dry-run` — preview only
+- `--resume` — continue from `run/rolling_state` after a crash
+- `--resume-from <ip>` — manual override
+- `--only <ip>` — reboot a single manager (cluster + admin_user auto-resolved from `managers.conf`). Used by the orchestrator's daily cron — see [MULTIDC.md → Daily rolling reboot](MULTIDC.md#daily-rolling-reboot--1-manager--day-multi-dc).
 
-## Crontab
+See `automations/manager_rolling_reboot/README.md` for the full reference.
+
+## Scheduling
+
+The legacy per-jump crontab scripts have been **removed**. The supported scheduling model is now a single daily cron on the orchestrator VM that walks an ordered plan one entry per day. Install on the orchestrator:
 
 ```bash
-# Production: day 1 of every month at 02:00
-./automations/manager_rolling_reboot/install_crontab.sh
+# One-time: copy the template, then edit (lives at the repo root)
+cp reboot_plan.example reboot_plan.conf
+vim reboot_plan.conf
 
-# Test cadence: every 30 min (lock prevents overlap)
-./automations/manager_rolling_reboot/install_crontab_test.sh
-
-# Remove
-./automations/manager_rolling_reboot/uninstall.sh
+./bin/install_orchestrator_cron.sh           # daily at 02:00 (CRON_HOUR=H CRON_MINUTE=M to override)
+./bin/uninstall_orchestrator_cron.sh         # remove cron (--purge-state also wipes state)
 ```
+
+See [MULTIDC.md](MULTIDC.md) for the orchestrator topology and the full `rolling_reboot_next.sh` CLI.
 
 ## Troubleshooting
 

@@ -291,6 +291,54 @@ cluster_admin_user(){
 }
 
 # ---------------------------------------------------------------------------
+# find_cluster_for_ip <ip>
+#   Echoes the cluster index whose CLUSTER_HOSTS_<i> contains <ip>.
+#   Returns 0 on hit, 1 if not found. Assumes parse_managers_conf has run.
+# ---------------------------------------------------------------------------
+find_cluster_for_ip(){
+  local ip="${1:?usage: find_cluster_for_ip <ip>}"
+  local i h
+  for (( i=0; i<CLUSTER_COUNT; i++ )); do
+    # shellcheck disable=SC2178   # nameref to cluster array
+    local -n _hosts_ref="CLUSTER_HOSTS_${i}"
+    for h in "${_hosts_ref[@]}"; do
+      if [[ "${h}" == "${ip}" ]]; then
+        unset -n _hosts_ref
+        echo "${i}"
+        return 0
+      fi
+    done
+    unset -n _hosts_ref
+  done
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# reboot_one_manager_by_ip <ip>
+#   Wrapper used by --only mode: locates the cluster <ip> belongs to,
+#   exports the right NSX_USER, then runs the standard reboot+wait+STABLE
+#   cycle. Honors NSX_DRY_RUN=1.
+#   Returns 0 on success, 1 on misconfig or reboot failure.
+# ---------------------------------------------------------------------------
+reboot_one_manager_by_ip(){
+  local ip="${1:?usage: reboot_one_manager_by_ip <ip>}"
+  local cidx
+  if ! cidx="$(find_cluster_for_ip "${ip}")"; then
+    log_err "IP ${ip} not found in any cluster of the parsed managers.conf."
+    return 1
+  fi
+  local user; user="$(cluster_admin_user "${cidx}")"
+  export NSX_USER="${user}"
+  log "[ONLY] manager=${ip} cluster=[${CLUSTER_LABELS[$cidx]}] user=${user}"
+
+  if [[ "${NSX_DRY_RUN:-0}" == "1" ]]; then
+    log "[DRY-RUN] [${CLUSTER_LABELS[$cidx]}] would reboot ${ip}"
+    return 0
+  fi
+  reboot_manager_and_wait "${ip}"
+}
+
+# ---------------------------------------------------------------------------
 # Per-cluster credential prompt and scoped execution.
 # Credentials live in arrays keyed by index:
 #   CLUSTER_ADMIN_PASS_<i>

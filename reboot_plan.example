@@ -1,0 +1,37 @@
+# reboot_plan.conf — ORCHESTRATOR-SIDE rolling reboot plan
+#
+# Lives on the orchestrator VM (the one that runs bin/rolling_reboot_next.sh
+# from cron). Copy to reboot_plan.conf and edit. reboot_plan.conf is
+# git-ignored.
+#
+# Format — one entry per line:
+#     <DC-LABEL>  <manager-ip>
+#
+# Rules:
+#   - <DC-LABEL> MUST match a [section] in datacenters.conf
+#   - <manager-ip> MUST exist in that DC jump's managers.conf
+#   - Order = reboot order. Group by cluster to spread risk: never reboot
+#     two managers of the same cluster back-to-back (since the cron runs
+#     daily, the natural 24h gap already covers KB 396719 reconciliation,
+#     but operators usually still interleave clusters as defense-in-depth).
+#   - One entry is rebooted per cron firing (see bin/install_orchestrator_cron.sh).
+#   - Comments start with '#'. Blank lines ignored.
+#
+# Example for 2 DCs, 3 clusters of 3 managers each = 18 entries / 18 days:
+#
+# # --- DC-A ---
+# DC-A 192.168.20.10        # GER1 master
+# DC-B 192.168.30.10        # interleave: GER1 of DC-B
+# DC-A 192.168.20.11        # GER1 second of DC-A
+# DC-B 192.168.30.11
+# DC-A 192.168.20.12
+# DC-B 192.168.30.12
+# # --- next cluster ---
+# DC-A 192.168.21.10        # GER2 master
+# DC-B 192.168.31.10
+# ...
+#
+# After the plan completes the cron stops doing anything until you run:
+#   ./bin/rolling_reboot_next.sh --reset --yes
+# (typically you would also edit this file first, e.g. to update IPs after
+#  a cluster rebuild.)

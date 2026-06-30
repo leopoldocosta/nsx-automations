@@ -571,6 +571,82 @@ dc_repo_path(){ local v="DC_REPO_PATH_${1}"; echo "${!v}"; }
 dc_ssh_key()  { local v="DC_SSH_KEY_${1}";   echo "${!v}"; }
 
 # ---------------------------------------------------------------------------
+# Reboot-plan parser (orchestrator-side)
+#
+#   parse_reboot_plan <file>
+#
+# File format — one entry per line:
+#     <DC-LABEL>  <manager-ip>
+#
+# The order of the file IS the reboot order. The label must match a
+# [section] in datacenters.conf; the IP must exist in that DC jump's
+# managers.conf (validated at run time, not here — the parser only enforces
+# syntax).
+#
+# Populates globals:
+#   PLAN_COUNT       - number of plan entries
+#   PLAN_DCS[i]      - DC label of entry i
+#   PLAN_IPS[i]      - manager IP of entry i
+#
+# Defensive: rejects shell metacharacters, malformed lines, dup IPs.
+# ---------------------------------------------------------------------------
+parse_reboot_plan(){
+  local file="${1:?usage: parse_reboot_plan <file>}"
+  [[ -f "${file}" ]] || { log_err "Reboot plan not found: ${file}"; return 1; }
+
+  unset PLAN_DCS PLAN_IPS
+  declare -ga PLAN_DCS=()
+  declare -ga PLAN_IPS=()
+  PLAN_COUNT=0
+
+  local re_label='^[A-Za-z0-9._-]+$'
+  local re_ipv4='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
+
+  local line ln=0 dc ip
+  declare -A _seen=()
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    ln=$(( ln + 1 ))
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "${line}" ]] && continue
+
+    # Exactly two whitespace-separated tokens
+    read -r dc ip extra <<<"${line}"
+    if [[ -z "${ip}" || -n "${extra}" ]]; then
+      log_warn "reboot_plan:${ln}: ignoring malformed line: ${line}"
+      continue
+    fi
+    if [[ ! "${dc}" =~ ${re_label} ]]; then
+      log_warn "reboot_plan:${ln}: invalid DC label '${dc}' — skipped"
+      continue
+    fi
+    if [[ ! "${ip}" =~ ${re_ipv4} ]]; then
+      log_warn "reboot_plan:${ln}: invalid IPv4 '${ip}' — skipped"
+      continue
+    fi
+    if [[ -n "${_seen[$ip]:-}" ]]; then
+      log_warn "reboot_plan:${ln}: duplicate IP ${ip} (already on line ${_seen[$ip]}) — skipped"
+      continue
+    fi
+    _seen[$ip]="${ln}"
+    PLAN_DCS+=("${dc}")
+    PLAN_IPS+=("${ip}")
+  done < "${file}"
+
+  PLAN_COUNT="${#PLAN_IPS[@]}"
+  if (( PLAN_COUNT == 0 )); then
+    log_err "No valid plan entries parsed from ${file}."
+    return 1
+  fi
+  log_ok "Parsed ${PLAN_COUNT} plan entries from ${file}."
+}
+
+plan_dc(){ echo "${PLAN_DCS[${1:?usage: plan_dc <idx>}]}"; }
+plan_ip(){ echo "${PLAN_IPS[${1:?usage: plan_ip <idx>}]}"; }
+
+# ---------------------------------------------------------------------------
 # rotate_logs [days] [dir]
 #   Removes files under <dir> (default $LOG_DIR) older than <days> days
 #   (default $NSX_LOG_RETENTION_DAYS, default 30).

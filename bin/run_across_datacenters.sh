@@ -31,6 +31,10 @@
 #                          Example: manager_rolling_reboot/nsx_rolling_reboot.sh
 #   --parallel N           Run up to N DCs concurrently (default 1, sequential).
 #                          Uses `wait -n` to cap fan-out without xargs fragility.
+#   --only-dc <label>      Fan out to ONLY this DC (must match a section in
+#                          datacenters.conf). Used by the daily rolling-reboot
+#                          orchestrator (bin/rolling_reboot_next.sh) to target
+#                          one DC per cron firing.
 #   --no-pull-logs         Skip the rsync pull of automations/<auto>/logs/.
 #   --out <dir>            Aggregation directory on the orchestrator.
 #                          Default: ./aggregated_logs/<YYYYMMDD_HHMMSS>/
@@ -65,6 +69,7 @@ PARALLEL=1
 PULL_LOGS=true
 OUT_BASE=""
 SSH_KEY_OVERRIDE=""
+ONLY_DC=""
 
 usage(){ grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
@@ -75,6 +80,7 @@ while [[ $# -gt 0 ]]; do
     --conf)         CONF="$2"; shift 2 ;;
     --automation)   AUTOMATION="$2"; shift 2 ;;
     --parallel)     PARALLEL="$2"; shift 2 ;;
+    --only-dc)      ONLY_DC="$2"; shift 2 ;;
     --no-pull-logs) PULL_LOGS=false; shift ;;
     --out)          OUT_BASE="$2"; shift 2 ;;
     --ssh-key)      SSH_KEY_OVERRIDE="$2"; shift 2 ;;
@@ -98,6 +104,22 @@ need_cmd ssh
 "${PULL_LOGS}" && need_cmd rsync
 
 parse_datacenters_conf "${CONF}"
+
+# Build the list of DC indexes to fan out to (filtered by --only-dc if set).
+TARGETS=()
+if [[ -n "${ONLY_DC}" ]]; then
+  for (( i=0; i<DC_COUNT; i++ )); do
+    if [[ "${DC_LABELS[$i]}" == "${ONLY_DC}" ]]; then
+      TARGETS+=("${i}")
+    fi
+  done
+  if (( ${#TARGETS[@]} == 0 )); then
+    log_err "--only-dc='${ONLY_DC}' did not match any section in ${CONF}."
+    exit 1
+  fi
+else
+  for (( i=0; i<DC_COUNT; i++ )); do TARGETS+=("${i}"); done
+fi
 
 TS="$(date +%Y%m%d_%H%M%S)"
 OUT_BASE="${OUT_BASE:-${REPO_ROOT}/aggregated_logs/${TS}}"
@@ -221,23 +243,23 @@ _quote_args(){
 # ---------------------------------------------------------------------------
 # Fan-out: sequential (PARALLEL=1) or capped concurrency via `wait -n`.
 # ---------------------------------------------------------------------------
-log_banner "Multi-DC fan-out — ${DC_COUNT} datacenter(s), parallelism=${PARALLEL}"
+log_banner "Multi-DC fan-out — ${#TARGETS[@]} datacenter(s), parallelism=${PARALLEL}${ONLY_DC:+ (filtered: ${ONLY_DC})}"
 log "Automation: ${AUTOMATION}  args: ${REMOTE_ARGS[*]:-(none)}"
 log "Output:     ${OUT_BASE}"
 
 overall_rc=0
 if (( PARALLEL == 1 )); then
-  for (( i=0; i<DC_COUNT; i++ )); do
-    run_one_dc "${i}" || overall_rc=1
+  for idx in "${TARGETS[@]}"; do
+    run_one_dc "${idx}" || overall_rc=1
   done
 else
   declare -a pids=()
   declare -a labels=()
   active=0
-  for (( i=0; i<DC_COUNT; i++ )); do
-    run_one_dc "${i}" &
+  for idx in "${TARGETS[@]}"; do
+    run_one_dc "${idx}" &
     pids+=("$!")
-    labels+=("${DC_LABELS[$i]}")
+    labels+=("${DC_LABELS[$idx]}")
     active=$(( active + 1 ))
     if (( active >= PARALLEL )); then
       if wait -n 2>/dev/null; then

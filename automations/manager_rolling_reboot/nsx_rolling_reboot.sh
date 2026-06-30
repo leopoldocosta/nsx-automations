@@ -15,6 +15,12 @@
 #                         cluster finishes cleanly.
 #   --resume-from <ip>    Skip until <ip> in the FIRST cluster, then
 #                         continue normally (manual override).
+#   --only <ip>           Reboot only this single manager. The IP must
+#                         exist in managers.conf; the script resolves the
+#                         cluster and admin_user automatically. Used by
+#                         the orchestrator's daily 1-manager/day cron
+#                         (bin/rolling_reboot_next.sh). Mutually exclusive
+#                         with --resume / --resume-from.
 #   -h | --help           Show this header.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,6 +39,7 @@ STATE_FILE="${STATE_FILE:-${RUN_DIR}/rolling_state}"
 DRY_RUN=false
 RESUME=false
 RESUME_FROM_ARG=""
+ONLY_IP=""
 
 usage(){ grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
@@ -41,10 +48,16 @@ while [[ $# -gt 0 ]]; do
     --dry-run)      DRY_RUN=true; shift ;;
     --resume)       RESUME=true; shift ;;
     --resume-from)  RESUME_FROM_ARG="$2"; shift 2 ;;
+    --only)         ONLY_IP="$2"; shift 2 ;;
     -h|--help)      usage ;;
     *) log_err "Unknown flag: $1"; exit 1 ;;
   esac
 done
+
+if [[ -n "${ONLY_IP}" ]] && { ${RESUME} || [[ -n "${RESUME_FROM_ARG}" ]]; }; then
+  log_err "--only is mutually exclusive with --resume / --resume-from"
+  exit 1
+fi
 
 # --- Lock file (skip in dry-run so operators can preview anytime) ---
 if ! $DRY_RUN; then
@@ -68,15 +81,34 @@ RUN_LOG="${LOG_DIR}/rolling_reboot_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "${RUN_LOG}") 2>&1
 
 if $DRY_RUN; then
-  log_banner "NSX Rolling Reboot — DRY-RUN — ${CLUSTER_COUNT} cluster(s)"
+  if [[ -n "${ONLY_IP}" ]]; then
+    log_banner "NSX Rolling Reboot — DRY-RUN — single manager (${ONLY_IP})"
+  else
+    log_banner "NSX Rolling Reboot — DRY-RUN — ${CLUSTER_COUNT} cluster(s)"
+  fi
   export NSX_DRY_RUN=1
+elif [[ -n "${ONLY_IP}" ]]; then
+  log_banner "NSX Rolling Reboot — single manager (${ONLY_IP})"
 else
   log_banner "NSX Rolling Reboot — ${CLUSTER_COUNT} cluster(s)"
   export NSX_STATE_FILE="${STATE_FILE}"
 fi
 log "Interval: ${NSX_REBOOT_INTERVAL}s | TCP max wait: ${NSX_REBOOT_MAX_WAIT}s | Cluster STABLE timeout: ${NSX_CLUSTER_STABLE_TIMEOUT}s"
 
-# --- Resume logic ---
+# --- Single-manager mode (used by the orchestrator's daily cron) -----------
+if [[ -n "${ONLY_IP}" ]]; then
+  reboot_one_manager_by_ip "${ONLY_IP}"
+  rc=$?
+  if (( rc == 0 )); then
+    log_banner "Single-manager reboot completed — ${ONLY_IP}"
+  else
+    log_banner "Single-manager reboot FAILED — ${ONLY_IP} (rc=${rc})"
+  fi
+  rotate_logs
+  exit "${rc}"
+fi
+
+# --- Resume logic (full multi-cluster mode) --------------------------------
 RESUME_CLUSTER_START=0
 if $RESUME && [[ -f "${STATE_FILE}" ]]; then
   IFS='|' read -r RS_IDX _ RS_IP _ < "${STATE_FILE}"

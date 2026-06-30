@@ -70,6 +70,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full list. Highlights:
 - `tbl_header`, `tbl_row`, `tbl_footer`
 - `parse_uptime_days`, `parse_version_short`
 - `parse_datacenters_conf <file>` + `dc_jump_host/dc_jump_user/dc_repo_path/dc_ssh_key <idx>` — INI parser for the multi-DC orchestrator; same anti-injection validation as `parse_managers_conf`
+- `parse_reboot_plan <file>` + `plan_dc/plan_ip <idx>` — orchestrator-side ordered plan for the daily rolling reboot; rejects shell-meta, malformed lines, and duplicate IPs
 - `install_crontab_line`, `remove_crontab_line`
 - `ensure_local_ssh_key`
 - `save_session_env`, `load_session_env`, `auto_clear_session_after`
@@ -86,7 +87,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full list. Highlights:
 - `register_edge_admin_key`, `register_edge_root_key` — return 0/1; distinguish "already registered" from "newly registered"
 
 ### Manager (`lib/nsx_manager.sh`)
-- `parse_managers_conf`, `cluster_hosts`, `cluster_admin_user`
+- `parse_managers_conf`, `cluster_hosts`, `cluster_admin_user`, `find_cluster_for_ip`, `reboot_one_manager_by_ip`
 - `ask_cluster_creds`, `with_cluster_creds`
 - `reboot_manager_and_wait` (gates on `wait_cluster_stable` after TCP comes back)
 - `wait_cluster_stable <ip> [timeout] [interval]` — poll `get cluster status` for STABLE; bypass with `NSX_SKIP_CLUSTER_GATE=1`

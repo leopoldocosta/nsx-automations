@@ -37,9 +37,12 @@ nsx-automations/
 │   └── nsx_manager.sh      # multi-cluster parser, reboot+wait, key registration
 │
 ├── bin/
-│   ├── deploy.sh                   # copy lib/ + bin/ + automations/ to a target host (or --all-dcs)
-│   ├── configure_ssh_keys.sh       # one-shot SSH-key registration (edge or manager)
-│   └── run_across_datacenters.sh   # fan-out an automation to every DC, pull logs back
+│   ├── deploy.sh                       # copy lib/ + bin/ + automations/ to a target host (or --all-dcs)
+│   ├── configure_ssh_keys.sh           # one-shot SSH-key registration (edge or manager)
+│   ├── run_across_datacenters.sh       # fan-out an automation to every DC, pull logs back
+│   ├── rolling_reboot_next.sh          # orchestrator: reboot ONE manager (next entry in reboot_plan.conf)
+│   ├── install_orchestrator_cron.sh    # install daily cron on the orchestrator
+│   └── uninstall_orchestrator_cron.sh  # remove daily cron (--purge-state also wipes state)
 │
 ├── automations/
 │   ├── edge_support_bundle/        # SB workflow (main + precheck + interactive CLI)
@@ -58,6 +61,7 @@ nsx-automations/
 │   └── managers.conf.example
 │
 ├── datacenters.conf.example  # inventory for run_across_datacenters / deploy --all-dcs
+├── reboot_plan.example       # orchestrator-side ordered plan for the daily rolling reboot
 └── .gitignore
 ```
 
@@ -101,6 +105,18 @@ vim datacenters.conf
 ./bin/run_across_datacenters.sh                            \
     --conf ./datacenters.conf                              \
     --automation manager_rolling_reboot/nsx_rolling_reboot.sh
+```
+
+### Daily rolling reboot (1 manager / day across all DCs)
+
+For KB 396719 mitigation at production cadence — 21 managers, 21 days:
+
+```bash
+cp reboot_plan.example reboot_plan.conf           # ordered "<DC> <manager-ip>" list
+vim reboot_plan.conf
+
+./bin/rolling_reboot_next.sh --list               # show the plan
+./bin/install_orchestrator_cron.sh                # daily cron at 02:00
 ```
 
 See [docs/MULTIDC.md](docs/MULTIDC.md) for the topology, security model, and full CLI reference.

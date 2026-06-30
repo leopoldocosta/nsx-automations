@@ -102,18 +102,65 @@ vim datacenters.conf
 
 ## Ongoing operation
 
-### Daily / monthly runs
+### Daily rolling reboot — 1 manager / day, multi-DC
+
+Production cadence for KB 396719 mitigation. Instead of "reboot every manager on day 1 of the month" (the old per-jump cron), the orchestrator reboots **one manager per day** following an ordered plan. With ~21 managers across multiple DCs, the cycle runs ~21 days and then idles until the operator resets the plan.
 
 ```bash
-# Multi-DC dry-run of the rolling reboot — preview, never reboots
+# One-time setup on the ORCHESTRATOR VM:
+cp reboot_plan.example reboot_plan.conf
+vim reboot_plan.conf                          # see schema below
+
+./bin/rolling_reboot_next.sh --list           # show ordered plan with [DONE]/[NEXT]/[PENDING]
+./bin/rolling_reboot_next.sh --dry-run        # preview tomorrow's target — no state change
+
+./bin/install_orchestrator_cron.sh            # daily at 02:00 (override: CRON_HOUR=H CRON_MINUTE=M)
+```
+
+`rolling_reboot_next.sh` on each firing:
+
+1. Reads `reboot_plan.conf` (ordered `<DC-LABEL> <manager-ip>` lines)
+2. Reads `run/rolling_global_state` → current index
+3. Resolves the next entry and calls
+   `bin/run_across_datacenters.sh --only-dc <DC> -- --only <ip>`
+4. On rc=0 → advance index. On rc≠0 → index unchanged, cron retries next day.
+
+Operator controls:
+
+```bash
+./bin/rolling_reboot_next.sh --show-state     # what was the last action, what's pending
+./bin/rolling_reboot_next.sh --advance        # skip next entry (e.g. manager rebooted out-of-band)
+./bin/rolling_reboot_next.sh --reset --yes    # restart plan from index 0
+./bin/uninstall_orchestrator_cron.sh          # remove cron; --purge-state also wipes state
+```
+
+#### `reboot_plan.conf` schema
+
+```text
+# orchestrator-side; git-ignored. Order = reboot order.
+<DC-LABEL>  <manager-ip>
+```
+
+| Field | Validation | Notes |
+|---|---|---|
+| `<DC-LABEL>` | `[A-Za-z0-9._-]+` | Must match a `[section]` in `datacenters.conf` |
+| `<manager-ip>` | IPv4 dotted quad | Must exist in that DC jump's `managers.conf` |
+
+The parser (`lib/common.sh:parse_reboot_plan`) rejects malformed lines, shell metacharacters, and duplicate IPs — same anti-injection posture as `parse_datacenters_conf` (covered by `tests/test_reboot_plan.bats`).
+
+### Ad-hoc multi-DC commands
+
+```bash
+# Dry-run the rolling reboot across every DC sequentially (preview only)
 ./bin/run_across_datacenters.sh \
    --conf ./datacenters.conf \
    --automation manager_rolling_reboot/nsx_rolling_reboot.sh \
    -- --dry-run
 
-# For real (sequential)
+# Full multi-cluster reboot of ONE specific DC (operator chooses)
 ./bin/run_across_datacenters.sh \
    --conf ./datacenters.conf \
+   --only-dc DC-A \
    --automation manager_rolling_reboot/nsx_rolling_reboot.sh
 
 # Read-only inventory across all DCs, up to 3 in parallel
@@ -180,10 +227,24 @@ ssh_key   = ~/.ssh/nsx_dc_fanout_dcb     # optional per-section override
 | `--conf <file>` | — | datacenters.conf. Required. |
 | `--automation <rel>` | — | Path under `automations/`, e.g. `manager_rolling_reboot/nsx_rolling_reboot.sh`. Required. |
 | `--parallel N` | `1` | Cap on concurrent DCs (uses `wait -n`). |
+| `--only-dc <label>` | _(all DCs)_ | Fan out to ONLY this DC label. Used by `rolling_reboot_next.sh`. |
 | `--no-pull-logs` | _(off)_ | Skip the rsync pull of `logs/`. |
 | `--out <dir>` | `aggregated_logs/<ts>/` | Local aggregation dir. |
 | `--ssh-key <path>` | per-DC | Override every `ssh_key` from the conf. |
 | `--` | — | Everything after `--` is forwarded verbatim to the remote automation. |
+
+`bin/rolling_reboot_next.sh` (orchestrator, daily cron entrypoint):
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--conf <file>` | `./datacenters.conf` | DC inventory. |
+| `--plan <file>` | `./reboot_plan.conf` | Ordered `<DC> <ip>` plan (git-ignored). |
+| `--state <file>` | `run/rolling_global_state` | Index + last_run bookkeeping (auto-managed). |
+| `--dry-run` | _(off)_ | Forward `--dry-run` to the remote automation. Does NOT advance the index. |
+| `--list` | _(off)_ | Print plan with `[DONE]/[NEXT]/[PENDING]` markers and exit. |
+| `--show-state` | _(off)_ | Print current state (index, last_dc, last_ip, last_run, last_status) and exit. |
+| `--reset --yes` | _(off)_ | Reset index to 0. Requires `--yes` when run non-interactively. |
+| `--advance` | _(off)_ | Skip the next entry without rebooting it (records `last_status=skipped`). |
 
 `bin/deploy.sh`:
 

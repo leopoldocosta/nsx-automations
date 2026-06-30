@@ -8,6 +8,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Daily 1-manager/day rolling reboot orchestrator** — production-cadence
+  replacement for the old "all managers on day 1 of the month" cron.
+  Operators with ~21 managers across multiple DCs now reboot **one
+  manager per day** following an explicit, ordered plan.
+  - New `bin/rolling_reboot_next.sh` (orchestrator entrypoint): reads
+    `reboot_plan.conf` + `run/rolling_global_state`, resolves the next
+    `<DC> <ip>` entry, calls
+    `bin/run_across_datacenters.sh --only-dc <DC> -- --only <ip>`,
+    advances the index only on rc=0 (so a failure is retried the
+    following day, not silently skipped). Flags: `--dry-run`, `--list`,
+    `--show-state`, `--reset --yes`, `--advance`.
+  - New `bin/install_orchestrator_cron.sh` / `bin/uninstall_orchestrator_cron.sh`
+    (the latter supports `--purge-state`). Default schedule 02:00 daily,
+    override with `CRON_HOUR` / `CRON_MINUTE`.
+  - New `parse_reboot_plan <file>` + `plan_dc/plan_ip <idx>` helpers in
+    `lib/common.sh`. Strict syntax validation: rejects shell metacharacters,
+    malformed lines, duplicate IPs (covered by `tests/test_reboot_plan.bats`,
+    4 asserts including the injection fixture).
+  - New `bin/run_across_datacenters.sh --only-dc <label>` flag — restricts
+    the fan-out to a single DC. Used by the daily orchestrator script.
+  - New `--only <ip>` flag in `automations/manager_rolling_reboot/nsx_rolling_reboot.sh`:
+    reboots a single manager, auto-resolving its cluster and `admin_user`
+    from `managers.conf`. Mutually exclusive with `--resume`/`--resume-from`.
+  - New `find_cluster_for_ip` + `reboot_one_manager_by_ip` helpers in
+    `lib/nsx_manager.sh`.
+  - New `reboot_plan.example` at the repo root (template, committed);
+    `reboot_plan.conf` added to `.gitignore`.
+  - Documented in `docs/MULTIDC.md` ("Daily rolling reboot" section + plan
+    schema + full CLI reference) and `docs/MANUAL.md`.
 - **Multi-datacenter fan-out** — a single orchestrator VM can now run any
   automation in every datacenter without copying NSX credentials around.
   - New `bin/run_across_datacenters.sh`: iterates `datacenters.conf`, opens
@@ -74,6 +103,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - `parse_managers_conf` rejects shell metacharacters and tokens like
   `rm` / `-rf` from `hosts =` and `admin_user =` values.
 - `bin/deploy.sh`: removed `eval`-based command construction.
+- `parse_reboot_plan` enforces strict `<label> <IPv4>` syntax and rejects
+  shell metacharacters before any value reaches `ssh`/`rsync`.
+
+### Removed
+- **Legacy per-jump cron scripts** — `automations/manager_rolling_reboot/install_crontab.sh`,
+  `install_crontab_test.sh`, and `uninstall.sh` were the old monthly cron
+  that rebooted every manager of a jump on day 1. Replaced by the
+  orchestrator-side daily cron (`bin/install_orchestrator_cron.sh`).
+  Operators with the old cron should run `crontab -e` and remove the line
+  manually, then install the orchestrator cron on the new model.
 
 ### Changed (cleanup)
 - PT→EN refactor: globals renamed for consistency across the codebase.
