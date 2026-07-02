@@ -1,0 +1,59 @@
+# reboot_plan.conf — FILLED SAMPLE: 7 DCs, 8 clusters, 24 managers, 24 days
+# =============================================================================
+# Copy to reboot_plan.conf on the ORCHESTRATOR VM and swap the IPs for yours.
+#   cp examples/reboot_plan_7dc_24managers.example reboot_plan.conf
+#
+# Layout assumed here (edit to match your estate):
+#   DC-1 .. DC-6 : one management cluster each (3 managers)      = 18 managers
+#   DC-7         : INFRA cluster (3) + WLD workload cluster (3)  =  6 managers
+#   Total: 8 clusters x 3 managers = 24 entries = 24 days
+#
+# Ordering strategy — ROUND-ROBIN across all 8 clusters:
+#   Day 01..08  → the 1st manager of every cluster (DC-1..DC-7 INFRA, DC-7 WLD)
+#   Day 09..16  → the 2nd manager of every cluster
+#   Day 17..24  → the 3rd manager of every cluster
+# Effect: two managers of the SAME cluster are always 8 days apart, so a
+# cluster is never running degraded on consecutive nights. The daily cron
+# already gives every reboot a 24h + STABLE-gate settle window on its own;
+# the 8-day intra-cluster spacing is defense-in-depth.
+#
+# Starting on day 01 the cycle ends on day 24; days 25..31 are no-ops until
+# you re-arm with:  ./bin/rolling_reboot_next.sh --reset --yes
+#
+# Format (parse_reboot_plan): "<DC-LABEL>  <manager-ip>" — one per line.
+#   - DC-LABEL must match a [section] in datacenters.conf (DC-7 appears for
+#     both of its clusters — the label routes to the jump VM, the IP picks
+#     the manager, so two clusters in one DC need no special handling)
+#   - manager-ip must exist in that DC jump's managers.conf
+#   - inline "# comment" after the IP is fine (stripped before parsing)
+# =============================================================================
+
+# ---- Day 01..08 : first manager of each cluster (round 1) ------------------
+DC-1 10.1.0.10    # DC1-m1
+DC-2 10.2.0.10    # DC2-m1
+DC-3 10.3.0.10    # DC3-m1
+DC-4 10.4.0.10    # DC4-m1
+DC-5 10.5.0.10    # DC5-m1
+DC-6 10.6.0.10    # DC6-m1
+DC-7 10.7.0.10    # DC7-INFRA-m1
+DC-7 10.7.1.10    # DC7-WLD-m1
+
+# ---- Day 09..16 : second manager of each cluster (round 2) -----------------
+DC-1 10.1.0.11    # DC1-m2
+DC-2 10.2.0.11    # DC2-m2
+DC-3 10.3.0.11    # DC3-m2
+DC-4 10.4.0.11    # DC4-m2
+DC-5 10.5.0.11    # DC5-m2
+DC-6 10.6.0.11    # DC6-m2
+DC-7 10.7.0.11    # DC7-INFRA-m2
+DC-7 10.7.1.11    # DC7-WLD-m2
+
+# ---- Day 17..24 : third manager of each cluster (round 3) ------------------
+DC-1 10.1.0.12    # DC1-m3
+DC-2 10.2.0.12    # DC2-m3
+DC-3 10.3.0.12    # DC3-m3
+DC-4 10.4.0.12    # DC4-m3
+DC-5 10.5.0.12    # DC5-m3
+DC-6 10.6.0.12    # DC6-m3
+DC-7 10.7.0.12    # DC7-INFRA-m3
+DC-7 10.7.1.12    # DC7-WLD-m3
