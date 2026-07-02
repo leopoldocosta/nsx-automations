@@ -54,6 +54,7 @@ nsx-automations/
 │   ├── CONTRIBUTING.md
 │   ├── ARCHITECTURE.md
 │   ├── MULTIDC.md            # hub-and-spoke topology + datacenters.conf schema
+│   ├── RUNBOOK_INSTALACAO.md # PT-BR: passo a passo de instalação multi-DC
 │   └── GO_FRAMEWORK.md       # language strategy reference (Bash default, Go on demand)
 │
 ├── examples/

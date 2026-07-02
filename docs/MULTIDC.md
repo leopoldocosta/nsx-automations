@@ -3,6 +3,8 @@
 Run an automation in every datacenter from a single orchestrator VM, while
 keeping NSX credentials **scoped to each datacenter**.
 
+> Passo a passo de instalação em português: [RUNBOOK_INSTALACAO.md](RUNBOOK_INSTALACAO.md).
+
 ## Topology
 
 ```

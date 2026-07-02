@@ -9,6 +9,7 @@ General notes that apply across all automations.
 >
 > **Running across multiple datacenters?** See [MULTIDC.md](MULTIDC.md) — one orchestrator
 > VM fans out to per-DC jump VMs; NSX credentials never leave the DC they belong to.
+> Passo a passo de instalação em português: [RUNBOOK_INSTALACAO.md](RUNBOOK_INSTALACAO.md).
 
 ## Folder convention
 
