@@ -259,15 +259,28 @@ _classify_set_user_ssh_key_result(){
 # stdin for builds that re-ask it inside nsxcli.
 _register_edge_key(){
   local ip="$1" user="$2" pub_full="$3" confirm_pass="$4" label="${5:-nsx-automation-key}"
-  local ktype kval result
+  local ktype kval result qpass
   ktype="$(awk '{print $1}' <<<"${pub_full}")"
   kval="$(awk '{print $2}' <<<"${pub_full}")"
-  result="$(admin_cmd "$ip" "set user ${user} ssh-keys label ${label} type ${ktype} value ${kval}" \
-            <<<"${confirm_pass}" 2>&1 || true)"
+
+  # FIELD-CONFIRMED on NSX 4.x edges: on a non-TTY session, `set user ...
+  # ssh-keys` WITHOUT the inline `password` parameter is silently ignored —
+  # empty response, key absent from `get user <u> ssh-keys`. So pass the
+  # current password inline (the CLI's own documented parameter), quoted.
+  qpass="${confirm_pass//\\/\\\\}"; qpass="${qpass//\"/\\\"}"
+  result="$(admin_cmd "$ip" "set user ${user} ssh-keys label ${label} type ${ktype} value ${kval} password \"${qpass}\"" \
+            </dev/null 2>&1 || true)"
   if echo "${result}" | grep -qi "command not found"; then
-    result="$(admin_cmd "$ip" "set user ${user} ssh-key \"${pub_full}\"" \
+    # Build without the password param: stdin-feed variant, then legacy.
+    result="$(admin_cmd "$ip" "set user ${user} ssh-keys label ${label} type ${ktype} value ${kval}" \
               <<<"${confirm_pass}" 2>&1 || true)"
+    if echo "${result}" | grep -qi "command not found"; then
+      result="$(admin_cmd "$ip" "set user ${user} ssh-key \"${pub_full}\"" \
+                <<<"${confirm_pass}" 2>&1 || true)"
+    fi
   fi
+  # Never let the password leak into terminal/logs via a CLI error echo.
+  [[ -n "${confirm_pass}" ]] && result="${result//${confirm_pass}/***}"
   echo "  Return: ${result:-<empty>}"
   _classify_set_user_ssh_key_result "${ip}" "${user}" "${result}"
 
