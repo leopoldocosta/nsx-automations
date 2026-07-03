@@ -10,16 +10,19 @@
 #   ./bin/run_across_datacenters.sh --conf ./datacenters.conf \
 #       --automation device_command/device_command.sh -- --cmd "get uptime"
 #
-# Local (single-DC) usage:
-#   ./device_command.sh                          # default: get uptime, all devices
-#   ./device_command.sh --cmd "get version"
-#   ./device_command.sh --targets managers
-#   ./device_command.sh --targets edges --cmd "get interface eth0"
+# Local (single-DC) usage — the command is whatever you type:
+#   ./device_command.sh get version              # positional = the command
+#   ./device_command.sh get interface eth0
+#   ./device_command.sh --targets managers get certificate api
+#   ./device_command.sh                          # asks you for the command (TTY)
 #
 # Flags:
-#   --cmd "<nsx-cli-cmd>"   Command executed on each device via admin SSH.
-#                           Default: "get uptime".
+#   --cmd "<nsx-cli-cmd>"   Same as positional; use it when the command
+#                           starts with a dash or for scripting clarity.
 #   --targets <t>           managers | edges | all   (default: all)
+#
+# With no command and no TTY (e.g. under the fan-out) the default is
+# "get uptime".
 #
 # Inventory (central, with local override):
 #   managers  : inventory/managers.conf   (or ./managers.conf beside this script)
@@ -44,19 +47,38 @@ source "${REPO_ROOT}/lib/common.sh"
 # shellcheck source=../../lib/nsx_manager.sh
 source "${REPO_ROOT}/lib/nsx_manager.sh"
 
-CMD="get uptime"
+CMD=""
 TARGETS="all"
 
 usage(){ grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
+# Flags first; anything left over IS the command (no --cmd needed):
+#   ./device_command.sh get version
+#   ./device_command.sh --targets edges get interface eth0
+POSITIONAL=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --cmd)     CMD="$2"; shift 2 ;;
     --targets) TARGETS="$2"; shift 2 ;;
     -h|--help) usage ;;
-    *) log_err "Unknown flag: $1"; exit 1 ;;
+    --*)       log_err "Unknown flag: $1"; exit 1 ;;
+    *)         POSITIONAL+=("$1"); shift ;;
   esac
 done
+if [[ -z "${CMD}" && ${#POSITIONAL[@]} -gt 0 ]]; then
+  CMD="${POSITIONAL[*]}"
+fi
+
+# No command given: ask interactively at a TTY; default to "get uptime"
+# otherwise (keeps the multi-DC fan-out non-interactive).
+if [[ -z "${CMD}" ]]; then
+  if [[ -t 0 ]]; then
+    read -rp "NSX CLI command to run on every device [get uptime]: " CMD
+    CMD="${CMD:-get uptime}"
+  else
+    CMD="get uptime"
+  fi
+fi
 
 case "${TARGETS}" in managers|edges|all) ;; *)
   log_err "--targets must be managers|edges|all (got '${TARGETS}')"; exit 1 ;;

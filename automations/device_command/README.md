@@ -20,12 +20,18 @@ cat aggregated_logs/<ts>/DC-*/logs/device_command_*.csv   # per-device rows
 
 ## Local (single DC) usage
 
+The command is whatever you type after the script name:
+
 ```bash
-./device_command.sh                              # get uptime, managers + edges
-./device_command.sh --cmd "get version"
-./device_command.sh --targets managers
-./device_command.sh --targets edges --cmd "get interface eth0"
+./device_command.sh get version                  # positional = the command
+./device_command.sh get interface eth0
+./device_command.sh --targets managers get certificate api
+./device_command.sh                              # no args at a TTY: asks you
+                                                 #   "NSX CLI command to run [get uptime]:"
 ```
+
+`--cmd "<command>"` still works (useful in scripts). With no command and
+no TTY — e.g. under the multi-DC fan-out — the default is `get uptime`.
 
 ## Inventory
 
