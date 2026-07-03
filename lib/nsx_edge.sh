@@ -268,8 +268,18 @@ _register_edge_key(){
   # empty response, key absent from `get user <u> ssh-keys`. So pass the
   # current password inline (the CLI's own documented parameter), quoted.
   qpass="${confirm_pass//\\/\\\\}"; qpass="${qpass//\"/\\\"}"
+  local rc=0
   result="$(admin_cmd "$ip" "set user ${user} ssh-keys label ${label} type ${ktype} value ${kval} password \"${qpass}\"" \
-            </dev/null 2>&1 || true)"
+            </dev/null 2>&1)" || rc=$?
+  # rc=255 = the SSH session itself failed (auth refused / unreachable).
+  # ssh_admin silences ssh's stderr, so without this check a wrong admin
+  # password looks like an empty-but-successful response (field-confirmed).
+  if (( rc == 255 )); then
+    log_err "${ip}: SSH as admin FAILED — wrong admin password or host unreachable (nothing was registered)."
+    log "  Stale saved credentials? rm -f run/session.env and rerun."
+    log "  See the ssh error: NSX_DEBUG=1 ./bin/configure_ssh_keys.sh --type edge"
+    return 1
+  fi
   if echo "${result}" | grep -qi "command not found"; then
     # Build without the password param: stdin-feed variant, then legacy.
     result="$(admin_cmd "$ip" "set user ${user} ssh-keys label ${label} type ${ktype} value ${kval}" \

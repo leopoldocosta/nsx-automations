@@ -86,6 +86,24 @@ case "${TYPE}" in
         -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR \
         "$1@$2" "exit" </dev/null &>/dev/null; }
 
+    # Fail fast: validate the admin password against ONE edge before touching
+    # the fleet. Saved session credentials may belong to another device class
+    # (e.g. the managers'), and ssh_admin silences ssh's stderr — without
+    # this probe a wrong password produces 8x fake-success output.
+    PROBE="${HOST_IPS[0]}"
+    if _key_works admin "${PROBE}"; then
+      log_ok "Probe ${PROBE}: key auth already works."
+    else
+      log "Validating admin password against ${PROBE}..."
+      if ! admin_cmd "${PROBE}" "get version" </dev/null >/dev/null 2>&1; then
+        log_err "Admin password rejected by ${PROBE} (or host unreachable). Nothing was attempted on the other edges."
+        log "  Saved session credentials can be stale/wrong class: rm -f run/session.env and rerun."
+        log "  Inspect the ssh error: NSX_DEBUG=1 $0 --type edge"
+        exit 1
+      fi
+      log_ok "Admin password OK on ${PROBE}."
+    fi
+
     for ip in "${HOST_IPS[@]}"; do
       log_banner "Edge ${ip}"
       # `|| true`: one failing edge must not abort the loop (set -e).
