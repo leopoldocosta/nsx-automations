@@ -1,0 +1,16 @@
+# inventory/managers.conf.example — CENTRAL manager inventory for THIS datacenter.
+#
+# Copy to inventory/managers.conf (git-ignored). Manager automations and
+# bin/configure_ssh_keys.sh read this file unless a local managers.conf
+# exists in the automation folder (local file = intentional override).
+#
+# One [section] per management cluster. A DC with two clusters (e.g.
+# infrabase + workload domain) simply declares both sections here.
+#
+# [INFRA]
+# hosts = 192.168.20.10, 192.168.20.11, 192.168.20.12
+# admin_user = admin
+#
+# [WLD]
+# hosts = 192.168.21.10, 192.168.21.11, 192.168.21.12
+# admin_user = admin

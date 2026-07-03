@@ -1,0 +1,11 @@
+# inventory/edge_nodes.example — CENTRAL edge inventory for THIS datacenter.
+#
+# Copy to inventory/edge_nodes.txt (git-ignored). Every edge automation
+# (edge_support_bundle, kb404700_disk_validation, edge_hardware_inventory, ...)
+# reads this file unless it finds a local edge_nodes.txt in its own folder
+# (local file = intentional override to run against a subset).
+#
+# One IPv4 per line. Comments and blank lines ignored.
+#
+# 192.168.10.10
+# 192.168.10.11

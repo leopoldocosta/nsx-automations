@@ -4,14 +4,16 @@
 # automations can run without prompting for passwords.
 #
 # Usage:
-#   ./bin/configure_ssh_keys.sh --type edge    --hosts <edge_nodes.txt>
-#   ./bin/configure_ssh_keys.sh --type manager --hosts <managers.conf>
+#   ./bin/configure_ssh_keys.sh --type edge    [--hosts <edge_nodes.txt>]
+#   ./bin/configure_ssh_keys.sh --type manager [--hosts <managers.conf>]
 #
 # Flags:
 #   --type edge|manager         Required. Edge uses ssh-key per user (admin + root);
 #                               manager uses `set user ... ssh-keys label ... value ...`.
 #   --hosts <file>              For edge: a flat text file of IPs.
 #                               For manager: an INI managers.conf (multi-cluster).
+#                               Default: inventory/edge_nodes.txt or
+#                               inventory/managers.conf (central per-DC inventory).
 #   --key <path>                Local SSH private key. Default: ~/.ssh/id_rsa.
 #                               Key type (ssh-rsa, ssh-ed25519, ...) is auto-
 #                               detected from the .pub header and passed through
@@ -44,7 +46,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -z "${TYPE}" ]] && { log_err "--type is required (edge|manager)."; exit 1; }
-[[ -z "${HOSTS_FILE}" ]] && { log_err "--hosts is required."; exit 1; }
+if [[ -z "${HOSTS_FILE}" ]]; then
+  case "${TYPE}" in
+    edge)    HOSTS_FILE="${NSX_INVENTORY_DIR}/edge_nodes.txt" ;;
+    manager) HOSTS_FILE="${NSX_INVENTORY_DIR}/managers.conf" ;;
+  esac
+  log "No --hosts given; using central inventory: ${HOSTS_FILE}"
+fi
 [[ -f "${HOSTS_FILE}" ]] || { log_err "Hosts file not found: ${HOSTS_FILE}"; exit 1; }
 
 need_cmd ssh

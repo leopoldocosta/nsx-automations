@@ -31,7 +31,35 @@ LOG_DIR="${AUTO_DIR}/logs"
 RUN_DIR="${AUTO_DIR}/run"
 KEY_DIR="${AUTO_DIR}/.ssh_keys"
 
+# ---------------------------------------------------------------------------
+# Central per-DC inventory (inventory/ at repo root)
+#
+# Host lists are DATACENTER inventory, not per-automation config. Keep them
+# once in inventory/ (edge_nodes.txt, managers.conf) and every automation
+# picks them up. An automation-local file, when present, still wins — that
+# is the intentional override for running against a subset.
+#
+# Resolution order (resolve_inventory_file):
+#   1. the automation-local path, if the file exists
+#   2. inventory/<same-basename>, if that exists
+#   3. the automation-local path again (so error messages stay local)
+# ---------------------------------------------------------------------------
+NSX_INVENTORY_DIR="${NSX_INVENTORY_DIR:-${REPO_ROOT}/inventory}"
+
+resolve_inventory_file(){
+  local preferred="${1:?usage: resolve_inventory_file <path>}"
+  local central="${NSX_INVENTORY_DIR}/$(basename "${preferred}")"
+  if [[ -f "${preferred}" ]]; then
+    printf '%s\n' "${preferred}"
+  elif [[ -f "${central}" ]]; then
+    printf '%s\n' "${central}"
+  else
+    printf '%s\n' "${preferred}"
+  fi
+}
+
 HOST_FILE="${HOST_FILE:-${AUTO_DIR}/hosts.txt}"
+HOST_FILE="$(resolve_inventory_file "${HOST_FILE}")"
 HOST_EXAMPLE="${HOST_EXAMPLE:-${AUTO_DIR}/hosts.example}"
 
 ADMIN_KEY="${ADMIN_KEY:-${KEY_DIR}/nsx_admin_key}"
@@ -214,7 +242,7 @@ collect_ips(){
 
 load_ips(){
   if [[ ! -s "${HOST_FILE}" ]]; then
-    log_warn "${HOST_FILE} not found or empty."
+    log_warn "${HOST_FILE} not found or empty (central inventory checked: ${NSX_INVENTORY_DIR}/)."
     collect_ips
   fi
   mapfile -t HOST_IPS < <(grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' "${HOST_FILE}" 2>/dev/null || true)

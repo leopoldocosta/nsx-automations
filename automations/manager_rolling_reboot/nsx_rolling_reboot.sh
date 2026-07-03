@@ -32,7 +32,8 @@ source "${REPO_ROOT}/lib/common.sh"
 # shellcheck source=../../lib/nsx_manager.sh
 source "${REPO_ROOT}/lib/nsx_manager.sh"
 
-MANAGERS_CONF="${MANAGERS_CONF:-${SCRIPT_DIR}/managers.conf}"
+# Local managers.conf wins; falls back to inventory/managers.conf (central).
+MANAGERS_CONF="${MANAGERS_CONF:-$(resolve_inventory_file "${SCRIPT_DIR}/managers.conf")}"
 LOCK_FILE="${LOCK_FILE:-/tmp/nsx_rolling_reboot.lock}"
 STATE_FILE="${STATE_FILE:-${RUN_DIR}/rolling_state}"
 
