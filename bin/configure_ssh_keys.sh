@@ -53,7 +53,13 @@ if [[ -z "${HOSTS_FILE}" ]]; then
   esac
   log "No --hosts given; using central inventory: ${HOSTS_FILE}"
 fi
-[[ -f "${HOSTS_FILE}" ]] || { log_err "Hosts file not found: ${HOSTS_FILE}"; exit 1; }
+if [[ ! -f "${HOSTS_FILE}" ]]; then
+  log_err "Hosts file not found: ${HOSTS_FILE}"
+  log "Create it from the template (note the exact filenames):"
+  log "  edges:    cp inventory/edge_nodes.example    inventory/edge_nodes.txt"
+  log "  managers: cp inventory/managers.conf.example inventory/managers.conf"
+  exit 1
+fi
 
 need_cmd ssh
 need_cmd sshpass

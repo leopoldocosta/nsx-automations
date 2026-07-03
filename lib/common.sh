@@ -520,7 +520,7 @@ parse_datacenters_conf(){
     fi
 
     if [[ "${current_idx}" -lt 0 ]]; then
-      log_warn "Ignoring line outside section: ${line}"
+      log_warn "Ignoring line outside section: ${line} — did you forget the [DC-LABEL] header above it?"
       continue
     fi
 

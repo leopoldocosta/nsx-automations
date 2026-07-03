@@ -210,7 +210,7 @@ parse_managers_conf(){
     fi
 
     if [[ "${current_idx}" -lt 0 ]]; then
-      log_warn "Ignoring line outside section: ${line}"
+      log_warn "Ignoring line outside section: ${line} — did you forget the [CLUSTER] header above it?"
       continue
     fi
 
