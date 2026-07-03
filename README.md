@@ -57,6 +57,10 @@ nsx-automations/
 │   ├── RUNBOOK_INSTALACAO.md # PT-BR: passo a passo de instalação multi-DC
 │   └── GO_FRAMEWORK.md       # language strategy reference (Bash default, Go on demand)
 │
+├── inventory/                # CENTRAL per-DC host inventory — single source of truth
+│   ├── edge_nodes.example    #   copy to edge_nodes.txt (git-ignored)
+│   └── managers.conf.example #   copy to managers.conf (git-ignored)
+│
 ├── examples/
 │   ├── edge_nodes.example
 │   └── managers.conf.example
@@ -85,13 +89,19 @@ cd automations/<name>
 cat README.md
 ```
 
-Every automation follows the same pattern:
+Fill the **central inventory** once per jump VM — every automation reads it:
 
 ```bash
-cp <hosts>.example <hosts>.txt           # or managers.conf
-vim <hosts>.txt
+cp inventory/edge_nodes.example    inventory/edge_nodes.txt
+cp inventory/managers.conf.example inventory/managers.conf
+vim inventory/edge_nodes.txt inventory/managers.conf
+
+cd automations/<name>
 ./<main_script>.sh
 ```
+
+To run one automation against a **subset**, drop a local `<hosts>.txt` /
+`managers.conf` inside its folder — a local file overrides the central one.
 
 ## Multi-datacenter
 
@@ -128,11 +138,11 @@ See [docs/MULTIDC.md](docs/MULTIDC.md) for the topology, security model, and ful
 # Install scripts on a remote jump/monitor server
 ./bin/deploy.sh --target user@host:~/nsx-automations --deps
 
-# Register SSH key on Edge Nodes
-./bin/configure_ssh_keys.sh --type edge --hosts automations/edge_support_bundle/edge_nodes.txt
+# Register SSH key on Edge Nodes (reads inventory/edge_nodes.txt by default)
+./bin/configure_ssh_keys.sh --type edge
 
-# Register SSH key on Managers (multi-cluster aware)
-./bin/configure_ssh_keys.sh --type manager --hosts automations/manager_rolling_reboot/managers.conf
+# Register SSH key on Managers (reads inventory/managers.conf by default)
+./bin/configure_ssh_keys.sh --type manager
 ```
 
 Not every automation needs them — e.g. `kb404700_disk_validation` runs straight from the clone, no deploy needed.

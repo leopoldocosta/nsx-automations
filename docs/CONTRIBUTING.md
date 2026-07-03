@@ -12,23 +12,20 @@ cd automations/<your_automation_name>
 - **Edge automation** → source `lib/common.sh` + `lib/nsx_edge.sh`
 - **Manager automation** → source `lib/common.sh` + `lib/nsx_manager.sh`
 
-## Step 3 — Host list template
+## Step 3 — Host list
 
-For Edges:
+**You usually don't need one.** Automations read the central per-DC inventory
+(`inventory/edge_nodes.txt` / `inventory/managers.conf`) via
+`resolve_inventory_file` — point `HOST_FILE` at a local name and the central
+fallback is automatic (see Step 4).
+
+Only ship a local `.example` template if your automation targets a **subset**
+of the estate by design (an automation-local file overrides the central one):
+
 ```bash
 cat > edge_nodes.example <<'EOF'
-# edge_nodes.example — copy to edge_nodes.txt and add IPs.
+# edge_nodes.example — OPTIONAL subset override; omit to use inventory/.
 # 192.168.10.10
-EOF
-```
-
-For Managers (multi-cluster):
-```bash
-cat > managers.conf.example <<'EOF'
-# managers.conf.example — copy to managers.conf and add clusters.
-# [GER1]
-# hosts = 192.168.20.10, 192.168.20.11, 192.168.20.12
-# admin_user = admin
 EOF
 ```
 
@@ -40,6 +37,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 export AUTO_DIR="${SCRIPT_DIR}"
+# Local file wins if present; otherwise lib/common.sh falls back to
+# inventory/<same-basename> (central per-DC inventory).
 export HOST_FILE="${SCRIPT_DIR}/<edge_nodes|managers>.txt"
 export HOST_EXAMPLE="${SCRIPT_DIR}/<edge_nodes|managers>.example"
 source "${REPO_ROOT}/lib/common.sh"
@@ -69,6 +68,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full list. Highlights:
 - `log`/`log_ok`/`log_warn`/`log_err`/`log_banner` (log_err honors `NSX_NOTIFY_WEBHOOK`)
 - `tbl_header`, `tbl_row`, `tbl_footer`
 - `parse_uptime_days`, `parse_version_short`
+- `resolve_inventory_file <path>` — local file wins, else `inventory/<basename>`, else the local path again (so errors stay local). Applied to `HOST_FILE` automatically at source time
 - `parse_datacenters_conf <file>` + `dc_jump_host/dc_jump_user/dc_repo_path/dc_ssh_key <idx>` — INI parser for the multi-DC orchestrator; same anti-injection validation as `parse_managers_conf`
 - `parse_reboot_plan <file>` + `plan_dc/plan_ip <idx>` — orchestrator-side ordered plan for the daily rolling reboot; rejects shell-meta, malformed lines, and duplicate IPs
 - `install_crontab_line`, `remove_crontab_line`

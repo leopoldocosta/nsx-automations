@@ -11,6 +11,26 @@ General notes that apply across all automations.
 > VM fans out to per-DC jump VMs; NSX credentials never leave the DC they belong to.
 > Passo a passo de instalação em português: [RUNBOOK_INSTALACAO.md](RUNBOOK_INSTALACAO.md).
 
+## Central inventory (per DC)
+
+Host lists are **datacenter inventory**, not per-automation config. Keep them
+once in `inventory/` at the repo root and every automation picks them up:
+
+```
+inventory/
+├── edge_nodes.txt      # all Edge Nodes of THIS datacenter (git-ignored)
+└── managers.conf       # all Manager clusters of THIS datacenter (git-ignored)
+```
+
+Resolution order (`resolve_inventory_file` in `lib/common.sh`):
+
+1. Automation-local file (e.g. `automations/<name>/edge_nodes.txt`) — if present,
+   it **wins**. That is the intentional override for running against a subset.
+2. Central `inventory/<same-name>`.
+3. Neither → clear error pointing at the local path.
+
+`bin/configure_ssh_keys.sh` also defaults `--hosts` to the central inventory.
+
 ## Folder convention
 
 ```
@@ -18,15 +38,20 @@ automations/<name>/
 ├── README.md
 ├── <main_script>.sh
 ├── <hosts>.example          # committed template
-└── <hosts>.txt|.conf        # your real hosts (git-ignored)
+└── <hosts>.txt|.conf        # OPTIONAL subset override (git-ignored);
+                             #   omit to use inventory/ (recommended)
 ```
 
 ## Common usage pattern
 
 ```bash
+# Once per jump VM: fill the central inventory
+cp inventory/edge_nodes.example    inventory/edge_nodes.txt
+cp inventory/managers.conf.example inventory/managers.conf
+vim inventory/edge_nodes.txt inventory/managers.conf
+
+# Then any automation just runs
 cd automations/<name>
-cp <hosts>.example <hosts>.txt   # or managers.conf for Managers
-vim <hosts>.txt
 ./<main>.sh
 ```
 
@@ -69,13 +94,14 @@ Manager-specific tunables live in `automations/manager_rolling_reboot/README.md`
 After running `bin/configure_ssh_keys.sh` once, subsequent automations skip the password prompt:
 
 ```bash
-# Edges
-./bin/configure_ssh_keys.sh --type edge \
-    --hosts automations/edge_support_bundle/edge_nodes.txt
+# Edges (reads inventory/edge_nodes.txt by default)
+./bin/configure_ssh_keys.sh --type edge
 
-# Managers (parses managers.conf for multi-cluster)
-./bin/configure_ssh_keys.sh --type manager \
-    --hosts automations/manager_rolling_reboot/managers.conf
+# Managers (reads inventory/managers.conf by default; multi-cluster aware)
+./bin/configure_ssh_keys.sh --type manager
+
+# Point at a different list explicitly
+./bin/configure_ssh_keys.sh --type edge --hosts <path>
 ```
 
 By default the key registered is `~/.ssh/id_rsa`. The script reads the public-key header (`ssh-rsa`, `ssh-ed25519`, …) and passes the correct `type` token to the NSX CLI, so both RSA and ed25519 keys work on Managers and Edges. Use `--key <path>` to point at a different private key.

@@ -36,11 +36,17 @@ do modelo: jump comprometido = blast radius de 1 DC.
 git clone https://github.com/leopoldocosta/nsx-automations.git ~/nsx-automations
 cd ~/nsx-automations
 
-# 2. Inventário do DC LOCAL apenas
-cp automations/manager_rolling_reboot/managers.conf.example \
-   automations/manager_rolling_reboot/managers.conf
-vim automations/manager_rolling_reboot/managers.conf
+# 2. Inventário CENTRAL do DC local (compartilhado por todas as automações)
+cp inventory/managers.conf.example inventory/managers.conf
+vim inventory/managers.conf
+cp inventory/edge_nodes.example inventory/edge_nodes.txt      # se o DC tiver edges
+vim inventory/edge_nodes.txt
 ```
+
+> O `inventory/` é o local único de consulta do parque daquele DC: managers e
+> edges ficam ali e **todas** as automações (atuais e futuras) leem de lá.
+> Um arquivo local dentro de `automations/<nome>/` ainda tem precedência —
+> é o override intencional para rodar contra um subconjunto.
 
 DC com 1 cluster de gerenciamento (3 managers):
 
@@ -66,8 +72,8 @@ admin_user = admin
 ```bash
 # 3. Registrar a chave SSH desta VM nos managers do DC local
 #    (pede a senha admin UMA vez; depois nunca mais)
-./bin/configure_ssh_keys.sh --type manager \
-   --hosts automations/manager_rolling_reboot/managers.conf
+#    --hosts é opcional: o default é o inventory/ central
+./bin/configure_ssh_keys.sh --type manager
 
 # 4. Validar que a chave pegou (não deve pedir senha)
 ssh -o BatchMode=yes admin@<mgr1-ip> "get cluster status" | head -5

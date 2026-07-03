@@ -59,19 +59,16 @@ keeping NSX credentials **scoped to each datacenter**.
 git clone https://github.com/leopoldocosta/nsx-automations.git ~/nsx-automations
 cd ~/nsx-automations
 
-# 2. Inventory of the LOCAL DC only
-cp automations/manager_rolling_reboot/managers.conf.example \
-   automations/manager_rolling_reboot/managers.conf
-vim automations/manager_rolling_reboot/managers.conf
-cp automations/edge_support_bundle/edge_nodes.example \
-   automations/edge_support_bundle/edge_nodes.txt
-vim automations/edge_support_bundle/edge_nodes.txt
+# 2. CENTRAL inventory of the LOCAL DC only (shared by every automation)
+cp inventory/managers.conf.example inventory/managers.conf
+vim inventory/managers.conf
+cp inventory/edge_nodes.example inventory/edge_nodes.txt
+vim inventory/edge_nodes.txt
 
 # 3. Register the jump's SSH key on the local NSX (one-time)
-./bin/configure_ssh_keys.sh --type manager \
-   --hosts automations/manager_rolling_reboot/managers.conf
-./bin/configure_ssh_keys.sh --type edge \
-   --hosts automations/edge_support_bundle/edge_nodes.txt
+#    (--hosts defaults to the central inventory)
+./bin/configure_ssh_keys.sh --type manager
+./bin/configure_ssh_keys.sh --type edge
 
 # 4. Notification + retention (optional)
 {

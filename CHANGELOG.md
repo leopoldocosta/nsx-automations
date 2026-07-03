@@ -8,6 +8,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Central per-DC inventory** (`inventory/` at repo root): `edge_nodes.txt`
+  and `managers.conf` live once per jump VM and every automation reads them
+  via the new `resolve_inventory_file` helper (an automation-local file still
+  wins — intentional subset override). Removes the 3-way `edge_nodes.txt`
+  duplication across the edge automations. `bin/configure_ssh_keys.sh`
+  `--hosts` is now optional and defaults to the central inventory.
+  Covered by `tests/test_inventory_resolver.bats`.
 - **Daily 1-manager/day rolling reboot orchestrator** — production-cadence
   replacement for the old "all managers on day 1 of the month" cron.
   Operators with ~21 managers across multiple DCs now reboot **one
