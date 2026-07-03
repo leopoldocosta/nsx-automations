@@ -88,15 +88,16 @@ case "${TYPE}" in
 
     for ip in "${HOST_IPS[@]}"; do
       log_banner "Edge ${ip}"
+      # `|| true`: one failing edge must not abort the loop (set -e).
       if _key_works admin "${ip}"; then
         log_ok "${ip}: admin key already works — skipping registration."
       else
-        register_edge_admin_key "${ip}" "${PUB_FULL}"
+        register_edge_admin_key "${ip}" "${PUB_FULL}" "${KEY_LABEL}" || true
       fi
       if _key_works root "${ip}"; then
         log_ok "${ip}: root key already works — skipping registration."
       else
-        register_edge_root_key "${ip}" "${PUB_FULL}"
+        register_edge_root_key "${ip}" "${PUB_FULL}" "${KEY_LABEL}" || true
       fi
     done
 

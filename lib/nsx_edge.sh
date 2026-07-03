@@ -249,28 +249,46 @@ _classify_set_user_ssh_key_result(){
   return 1
 }
 
+# _register_edge_key <ip> <user> <pub_full> <confirm_pass> [label]
+#
+# Shared registrar. Tries the MODERN CLI syntax first
+# (`set user <u> ssh-keys label <l> type <t> value <v>` — same as managers;
+# confirmed in the field on NSX 4.x edges), falling back to the LEGACY
+# `set user <u> ssh-key "<full line>"` when the build answers
+# "Command not found". The current password of the target user is fed on
+# stdin for builds that re-ask it inside nsxcli.
+_register_edge_key(){
+  local ip="$1" user="$2" pub_full="$3" confirm_pass="$4" label="${5:-nsx-automation-key}"
+  local ktype kval result
+  ktype="$(awk '{print $1}' <<<"${pub_full}")"
+  kval="$(awk '{print $2}' <<<"${pub_full}")"
+  result="$(admin_cmd "$ip" "set user ${user} ssh-keys label ${label} type ${ktype} value ${kval}" \
+            <<<"${confirm_pass}" 2>&1 || true)"
+  if echo "${result}" | grep -qi "command not found"; then
+    result="$(admin_cmd "$ip" "set user ${user} ssh-key \"${pub_full}\"" \
+              <<<"${confirm_pass}" 2>&1 || true)"
+  fi
+  _classify_set_user_ssh_key_result "${ip}" "${user}" "${result}"
+}
+
 register_edge_admin_key(){
   local ip="$1"
   local pub_full="$2"   # full line: "ssh-ed25519 AAAA... comment"
-  local result
+  local label="${3:-nsx-automation-key}"
   log "${ip}: registering admin SSH key..."
-  # Capture both stdout and stderr so we can classify the outcome.
-  # Some NSX builds re-ask the target user's CURRENT password inside nsxcli
-  # (read from stdin on a non-TTY session) — feed it so the call never hangs.
-  result="$(admin_cmd "$ip" "set user admin ssh-key \"${pub_full}\"" <<<"${NSX_PASS:-}" 2>&1 || true)"
-  _classify_set_user_ssh_key_result "${ip}" "admin" "${result}"
+  _register_edge_key "${ip}" admin "${pub_full}" "${NSX_PASS:-}" "${label}"
 }
 
 register_edge_root_key(){
   local ip="$1"
   local pub_full="$2"
-  local result rc
+  local label="${3:-nsx-automation-key}"
+  local rc
   enable_root_ssh "$ip"
   sleep 2
   log "${ip}: registering root SSH key..."
   # For `set user root ...` the confirmation asked is ROOT's password.
-  result="$(admin_cmd "$ip" "set user root ssh-key \"${pub_full}\"" <<<"${ROOT_PASS:-}" 2>&1 || true)"
-  _classify_set_user_ssh_key_result "${ip}" "root" "${result}"
+  _register_edge_key "${ip}" root "${pub_full}" "${ROOT_PASS:-}" "${label}"
   rc=$?
   disable_root_ssh "$ip"
   return $rc
