@@ -106,6 +106,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   strict regex (IPv4 OR FQDN-like) — shell metacharacters are rejected.
 - `bin/deploy.sh` no longer uses `eval`; commands run via argv array.
 
+### Fixed
+- **`bin/deploy.sh` no longer destroys target-side state on re-deploy.**
+  The rsync used `--delete-excluded`, which deletes *excluded* paths on the
+  receiver — every re-deploy wiped the jump's `.ssh_keys/` (registered NSX
+  keys), `run/` (resume state) and `logs/`; the implied `--delete` also
+  removed any jump-local `managers.conf`/`edge_nodes.txt` absent from the
+  sender. Now uses plain `--delete` (stale code is still pruned; excluded
+  runtime paths are protected) plus explicit protection for
+  `edge_nodes.txt`, `managers.conf`, `hosts.txt`, `datacenters.conf` and
+  `reboot_plan.conf`. `inventory/` templates are now shipped by deploy too.
+
 ### Security
 - `parse_managers_conf` rejects shell metacharacters and tokens like
   `rm` / `-rf` from `hosts =` and `admin_user =` values.

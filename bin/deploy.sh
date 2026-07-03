@@ -65,7 +65,10 @@ fi
 need_cmd rsync || need_cmd scp
 
 # Source paths to copy — identical for single and multi-DC modes.
-SRC_ITEMS=("${REPO_ROOT}/lib" "${REPO_ROOT}/bin" "${REPO_ROOT}/docs" "${REPO_ROOT}/README.md")
+# inventory/ is included for its .example templates only: the real host
+# files (edge_nodes.txt, managers.conf) are excluded from the transfer AND
+# protected from deletion on the target (see rsync flags below).
+SRC_ITEMS=("${REPO_ROOT}/lib" "${REPO_ROOT}/bin" "${REPO_ROOT}/docs" "${REPO_ROOT}/README.md" "${REPO_ROOT}/inventory")
 if [[ -n "${AUTOMATION}" ]]; then
   AUTO_PATH="${REPO_ROOT}/automations/${AUTOMATION}"
   [[ -d "${AUTO_PATH}" ]] || { log_err "Automation not found: ${AUTOMATION}"; exit 1; }
@@ -117,8 +120,15 @@ deploy_to_target(){
   # 2. rsync (preferred) or scp fallback
   if command -v rsync >/dev/null 2>&1; then
     for it in "${SRC_ITEMS[@]}"; do
-      run_or_show rsync -avz --delete-excluded \
+      # --delete prunes stale CODE on the target, but excluded patterns are
+      # PROTECTED from deletion (rsync only deletes excluded receiver files
+      # under --delete-excluded — never use that flag here: it would wipe
+      # the jump's .ssh_keys/ (NSX keys), run/ state, logs/ and any local
+      # inventory override on every re-deploy).
+      run_or_show rsync -avz --delete \
         --exclude logs/ --exclude run/ --exclude .ssh_keys/ --exclude aggregated_logs/ \
+        --exclude edge_nodes.txt --exclude managers.conf --exclude hosts.txt \
+        --exclude datacenters.conf --exclude reboot_plan.conf \
         "${rsync_e[@]}" \
         "${it}" "${t_host}:${t_path}/"
     done
