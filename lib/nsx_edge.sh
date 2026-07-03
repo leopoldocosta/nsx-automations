@@ -231,6 +231,12 @@ bundle_duration(){
 # ---------------------------------------------------------------------------
 _classify_set_user_ssh_key_result(){
   local ip="$1" who="$2" result="$3"
+  # Drop the noise the remote getpass fallback prints on a non-TTY session.
+  result="$(echo "${result}" | grep -viE 'getpass|fallback_getpass|Password input may be echoed|Password \(required' || true)"
+  if echo "${result}" | grep -qiE "invalid current password"; then
+    log_err "${ip}: NSX rejected the ${who} password when confirming the change — check it and rerun."
+    return 1
+  fi
   if echo "${result}" | grep -qiE "already exists|duplicate|same key"; then
     log_ok "${ip}: ${who} key already registered (no-op)."
     return 0
@@ -249,9 +255,9 @@ register_edge_admin_key(){
   local result
   log "${ip}: registering admin SSH key..."
   # Capture both stdout and stderr so we can classify the outcome.
-  # </dev/null: some NSX builds prompt for a password INSIDE nsxcli on
-  # `set user` — an EOF on stdin turns a forever-hang into a visible error.
-  result="$(admin_cmd "$ip" "set user admin ssh-key \"${pub_full}\"" </dev/null 2>&1 || true)"
+  # Some NSX builds re-ask the target user's CURRENT password inside nsxcli
+  # (read from stdin on a non-TTY session) — feed it so the call never hangs.
+  result="$(admin_cmd "$ip" "set user admin ssh-key \"${pub_full}\"" <<<"${NSX_PASS:-}" 2>&1 || true)"
   _classify_set_user_ssh_key_result "${ip}" "admin" "${result}"
 }
 
@@ -262,7 +268,8 @@ register_edge_root_key(){
   enable_root_ssh "$ip"
   sleep 2
   log "${ip}: registering root SSH key..."
-  result="$(admin_cmd "$ip" "set user root ssh-key \"${pub_full}\"" </dev/null 2>&1 || true)"
+  # For `set user root ...` the confirmation asked is ROOT's password.
+  result="$(admin_cmd "$ip" "set user root ssh-key \"${pub_full}\"" <<<"${ROOT_PASS:-}" 2>&1 || true)"
   _classify_set_user_ssh_key_result "${ip}" "root" "${result}"
   rc=$?
   disable_root_ssh "$ip"
