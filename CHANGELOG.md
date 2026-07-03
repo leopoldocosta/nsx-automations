@@ -8,6 +8,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `bin/run_command_across_dcs.sh` — ad-hoc runner: execute ANY shell command
+  on every DC jump (or one, with `--only-dc`) with the same SSH posture as
+  the automation fan-out. Streamed per-DC output, summary table, exit code =
+  number of failed DCs. Recommended first smoke-test of the SSH mesh.
 - **Central per-DC inventory** (`inventory/` at repo root): `edge_nodes.txt`
   and `managers.conf` live once per jump VM and every automation reads them
   via the new `resolve_inventory_file` helper (an automation-local file still

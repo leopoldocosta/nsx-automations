@@ -149,6 +149,21 @@ The parser (`lib/common.sh:parse_reboot_plan`) rejects malformed lines, shell me
 
 ### Ad-hoc multi-DC commands
 
+Arbitrary command on every jump (the "ansible ad-hoc" of the toolkit —
+also the recommended first smoke-test of the SSH mesh):
+
+```bash
+./bin/run_command_across_dcs.sh -- hostname
+./bin/run_command_across_dcs.sh -- "uname -a && uptime"
+./bin/run_command_across_dcs.sh --only-dc DC-7 -- "df -h /"
+./bin/run_command_across_dcs.sh -- "cd ~/nsx-automations && git log -1 --oneline"
+```
+
+Sequential, streamed output per DC, summary table at the end; exit code =
+number of failed DCs. `--conf` defaults to `<repo>/datacenters.conf`.
+
+Full automations across DCs:
+
 ```bash
 # Dry-run the rolling reboot across every DC sequentially (preview only)
 ./bin/run_across_datacenters.sh \

@@ -40,6 +40,7 @@ nsx-automations/
 │   ├── deploy.sh                       # copy lib/ + bin/ + automations/ to a target host (or --all-dcs)
 │   ├── configure_ssh_keys.sh           # one-shot SSH-key registration (edge or manager)
 │   ├── run_across_datacenters.sh       # fan-out an automation to every DC, pull logs back
+│   ├── run_command_across_dcs.sh       # ad-hoc: run ANY command on every DC jump
 │   ├── rolling_reboot_next.sh          # orchestrator: reboot ONE manager (next entry in reboot_plan.conf)
 │   ├── install_orchestrator_cron.sh    # install daily cron on the orchestrator
 │   └── uninstall_orchestrator_cron.sh  # remove daily cron (--purge-state also wipes state)
