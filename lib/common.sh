@@ -259,7 +259,8 @@ load_ips(){
 # ---------------------------------------------------------------------------
 ask_admin_creds(){
   if [[ -n "${NSX_PASS:-}" ]]; then
-    log "Admin credentials already loaded (user: '${NSX_USER:-admin}')."
+    log "Admin credentials already loaded (user: '${NSX_USER:-admin}') — inherited from the environment."
+    log "  Wrong device class? Re-enter with: unset NSX_PASS NSX_USER ROOT_PASS"
     return 0
   fi
   IFS= read -rp 'Admin username [admin]: ' NSX_USER </dev/tty

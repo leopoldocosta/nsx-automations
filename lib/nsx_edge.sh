@@ -276,7 +276,7 @@ _register_edge_key(){
   # password looks like an empty-but-successful response (field-confirmed).
   if (( rc == 255 )); then
     log_err "${ip}: SSH as admin FAILED — wrong admin password or host unreachable (nothing was registered)."
-    log "  Stale saved credentials? rm -f run/session.env and rerun."
+    log "  Inherited credentials from the shell? Clear them:  unset NSX_PASS NSX_USER ROOT_PASS"
     log "  See the ssh error: NSX_DEBUG=1 ./bin/configure_ssh_keys.sh --type edge"
     return 1
   fi

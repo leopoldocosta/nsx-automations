@@ -80,16 +80,16 @@ case "${TYPE}" in
     export HOST_FILE="${HOSTS_FILE}"
     load_ips
     ask_admin_creds
-    ask_root_creds
 
     _key_works(){ ssh -i "${SSH_PRIV}" -o BatchMode=yes -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR \
         "$1@$2" "exit" </dev/null &>/dev/null; }
 
-    # Fail fast: validate the admin password against ONE edge before touching
-    # the fleet. Saved session credentials may belong to another device class
-    # (e.g. the managers'), and ssh_admin silences ssh's stderr — without
-    # this probe a wrong password produces 8x fake-success output.
+    # Fail fast, BEFORE the root prompt: validate the admin password against
+    # ONE edge. Credentials inherited from the shell environment may belong
+    # to another device class (e.g. the managers'), and ssh_admin silences
+    # ssh's stderr — without this probe a wrong password produces 8x
+    # fake-success output (field-confirmed).
     PROBE="${HOST_IPS[0]}"
     if _key_works admin "${PROBE}"; then
       log_ok "Probe ${PROBE}: key auth already works."
@@ -97,12 +97,14 @@ case "${TYPE}" in
       log "Validating admin password against ${PROBE}..."
       if ! admin_cmd "${PROBE}" "get version" </dev/null >/dev/null 2>&1; then
         log_err "Admin password rejected by ${PROBE} (or host unreachable). Nothing was attempted on the other edges."
-        log "  Saved session credentials can be stale/wrong class: rm -f run/session.env and rerun."
+        log "  Inherited credentials from this shell? Clear them:  unset NSX_PASS NSX_USER ROOT_PASS"
         log "  Inspect the ssh error: NSX_DEBUG=1 $0 --type edge"
         exit 1
       fi
       log_ok "Admin password OK on ${PROBE}."
     fi
+
+    ask_root_creds
 
     for ip in "${HOST_IPS[@]}"; do
       log_banner "Edge ${ip}"
