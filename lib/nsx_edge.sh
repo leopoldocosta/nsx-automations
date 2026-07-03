@@ -249,7 +249,9 @@ register_edge_admin_key(){
   local result
   log "${ip}: registering admin SSH key..."
   # Capture both stdout and stderr so we can classify the outcome.
-  result="$(admin_cmd "$ip" "set user admin ssh-key \"${pub_full}\"" 2>&1 || true)"
+  # </dev/null: some NSX builds prompt for a password INSIDE nsxcli on
+  # `set user` — an EOF on stdin turns a forever-hang into a visible error.
+  result="$(admin_cmd "$ip" "set user admin ssh-key \"${pub_full}\"" </dev/null 2>&1 || true)"
   _classify_set_user_ssh_key_result "${ip}" "admin" "${result}"
 }
 
@@ -260,7 +262,7 @@ register_edge_root_key(){
   enable_root_ssh "$ip"
   sleep 2
   log "${ip}: registering root SSH key..."
-  result="$(admin_cmd "$ip" "set user root ssh-key \"${pub_full}\"" 2>&1 || true)"
+  result="$(admin_cmd "$ip" "set user root ssh-key \"${pub_full}\"" </dev/null 2>&1 || true)"
   _classify_set_user_ssh_key_result "${ip}" "root" "${result}"
   rc=$?
   disable_root_ssh "$ip"

@@ -44,18 +44,29 @@ register_manager_admin_key(){
   local result
 
   log "${ip}: registering SSH key (label='${label}', user='${user}', type='${key_type}')..."
-  result="$(_sshpass_safe NSX_PASS ssh \
+  # </dev/null + timeout: some NSX builds make `set user ... ssh-keys` prompt
+  # for the user's password INSIDE nsxcli (app-level, not ssh-level). sshpass
+  # only answers the ssh prompt, so without these guards the call hangs
+  # forever waiting on stdin.
+  local -a _to=()
+  command -v timeout >/dev/null 2>&1 && _to=(timeout 30)
+  result="$(_sshpass_safe NSX_PASS "${_to[@]}" ssh \
     -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=10 \
     -o LogLevel=ERROR \
     "${user}@${ip}" \
-    "set user ${user} ssh-keys label ${label} type ${key_type} value ${pub_val}" 2>&1 || true)"
+    "set user ${user} ssh-keys label ${label} type ${key_type} value ${pub_val}" </dev/null 2>&1 || true)"
 
   echo "  Return: ${result}"
   if echo "${result}" | grep -qiE "already exists|duplicate"; then
     log_ok "${ip}: key already registered (no-op)."
     return 0
+  fi
+  if echo "${result}" | grep -qiE "password"; then
+    log_err "${ip}: NSX CLI asked for interactive password confirmation — cannot register non-interactively on this build."
+    log "  Register manually on the manager:  set user ${user} ssh-keys label ${label} type ${key_type} value <pubkey>"
+    return 1
   fi
   if echo "${result}" | grep -qiE "${label}|success" || [[ -z "${result}" ]]; then
     log_ok "${ip}: key registered."

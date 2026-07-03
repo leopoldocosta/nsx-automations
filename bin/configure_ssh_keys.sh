@@ -82,10 +82,22 @@ case "${TYPE}" in
     ask_admin_creds
     ask_root_creds
 
+    _key_works(){ ssh -i "${SSH_PRIV}" -o BatchMode=yes -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR \
+        "$1@$2" "exit" </dev/null &>/dev/null; }
+
     for ip in "${HOST_IPS[@]}"; do
       log_banner "Edge ${ip}"
-      register_edge_admin_key "${ip}" "${PUB_FULL}"
-      register_edge_root_key  "${ip}" "${PUB_FULL}"
+      if _key_works admin "${ip}"; then
+        log_ok "${ip}: admin key already works — skipping registration."
+      else
+        register_edge_admin_key "${ip}" "${PUB_FULL}"
+      fi
+      if _key_works root "${ip}"; then
+        log_ok "${ip}: root key already works — skipping registration."
+      else
+        register_edge_root_key "${ip}" "${PUB_FULL}"
+      fi
     done
 
     clear_creds
@@ -98,16 +110,42 @@ case "${TYPE}" in
 
     parse_managers_conf "${HOSTS_FILE}"
 
-    local_idx=0
+    _key_works(){ ssh -i "${SSH_PRIV}" -o BatchMode=yes -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR \
+        "$1@$2" "exit" </dev/null &>/dev/null; }
+
+    # Pre-scan: only prompt for credentials of clusters that actually need
+    # registration. If the key already opens every host, no password is asked.
+    declare -a NEED=()
     for (( i=0; i<CLUSTER_COUNT; i++ )); do
-      ask_cluster_creds "${i}"
+      cuser="$(cluster_admin_user "${i}")"
+      read -r -a hosts <<<"$(cluster_hosts "${i}")"
+      pending=false
+      for ip in "${hosts[@]}"; do
+        if _key_works "${cuser}" "${ip}"; then
+          log_ok "${ip}: key already works for ${cuser} — will skip."
+        else
+          pending=true
+        fi
+      done
+      NEED[$i]="${pending}"
     done
 
     for (( i=0; i<CLUSTER_COUNT; i++ )); do
+      [[ "${NEED[$i]}" == "true" ]] && ask_cluster_creds "${i}"
+    done
+
+    for (( i=0; i<CLUSTER_COUNT; i++ )); do
+      [[ "${NEED[$i]}" == "true" ]] || continue
       label="${CLUSTER_LABELS[$i]}"
+      cuser="$(cluster_admin_user "${i}")"
       log_banner "Cluster [${label}]"
       read -r -a hosts <<<"$(cluster_hosts "${i}")"
       for ip in "${hosts[@]}"; do
+        if _key_works "${cuser}" "${ip}"; then
+          log_ok "${ip}: key already works — skipping."
+          continue
+        fi
         with_cluster_creds "${i}" register_manager_admin_key "${ip}" "${PUB_VAL}" "${KEY_LABEL}" "${PUB_TYPE}" || true
       done
     done
