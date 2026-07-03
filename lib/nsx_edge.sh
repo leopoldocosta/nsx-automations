@@ -268,7 +268,24 @@ _register_edge_key(){
     result="$(admin_cmd "$ip" "set user ${user} ssh-key \"${pub_full}\"" \
               <<<"${confirm_pass}" 2>&1 || true)"
   fi
+  echo "  Return: ${result:-<empty>}"
   _classify_set_user_ssh_key_result "${ip}" "${user}" "${result}"
+
+  # Trust the lock, verify the door: a clean CLI response does not always
+  # mean the key actually authenticates (seen in the field). When we have
+  # the private half locally, do a real BatchMode login to confirm.
+  local priv="${SSH_PRIV:-${HOME}/.ssh/id_rsa}"
+  if [[ -f "${priv}" ]]; then
+    sleep 2
+    if ssh -i "${priv}" -o BatchMode=yes -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR \
+        "${user}@${ip}" "exit" </dev/null &>/dev/null; then
+      log_ok "${ip}: ${user} key VERIFIED (BatchMode login ok)."
+    else
+      log_warn "${ip}: CLI accepted the key but a key-only login still fails — inspect with: ssh ${user}@${ip} then 'get user ${user} ssh-keys'"
+      return 1
+    fi
+  fi
 }
 
 register_edge_admin_key(){
