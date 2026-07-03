@@ -149,14 +149,29 @@ The parser (`lib/common.sh:parse_reboot_plan`) rejects malformed lines, shell me
 
 ### Ad-hoc multi-DC commands
 
-Arbitrary command on every jump (the "ansible ad-hoc" of the toolkit —
-also the recommended first smoke-test of the SSH mesh):
+Two layers — know which one you want:
+
+| Target | Tool |
+|---|---|
+| The **jump VMs** themselves (SSH-mesh smoke-test, git status, disk space) | `bin/run_command_across_dcs.sh` |
+| The **NSX devices** (managers + edges) of every DC | `automations/device_command/` via the fan-out |
+
+Command on every jump VM:
 
 ```bash
 ./bin/run_command_across_dcs.sh -- hostname
 ./bin/run_command_across_dcs.sh -- "uname -a && uptime"
 ./bin/run_command_across_dcs.sh --only-dc DC-7 -- "df -h /"
-./bin/run_command_across_dcs.sh -- "cd ~/nsx-automations && git log -1 --oneline"
+```
+
+NSX CLI command on every **device** of every DC (each jump queries its own
+managers + edges with its own keys; per-device CSVs are pulled back):
+
+```bash
+./bin/run_across_datacenters.sh --conf ./datacenters.conf --parallel 3 \
+    --automation device_command/device_command.sh -- --cmd "get uptime"
+
+cat aggregated_logs/<ts>/DC-*/logs/device_command_*.csv
 ```
 
 Sequential, streamed output per DC, summary table at the end; exit code =

@@ -75,6 +75,7 @@ nsx-automations/
 
 | Folder | Target | Purpose |
 |---|---|---|
+| `device_command` | Managers + Edges | Run any read-only NSX CLI command on every device of the DC (table + CSV) |
 | `edge_support_bundle` | Edges | Collect & verify NSX support bundles across all Edges |
 | `kb404700_disk_validation` | Edges | Check `/dev/sda2` + `overlay2` usage; flag nodes needing action |
 | `manager_rolling_reboot` | Managers | Multi-cluster monthly rolling reboot (mitigates KB 396719) |

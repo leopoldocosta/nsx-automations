@@ -8,6 +8,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- New automation `device_command/`: run a read-only NSX CLI command on every
+  device of the local DC — all manager clusters (multi-cluster aware, e.g.
+  infrabase + workload domain) and/or all edge nodes — producing a
+  consolidated table + CSV (`type,cluster,ip,exit_code,output`). Never
+  prompts (fan-out safe); exit code = number of failed devices. Fanned out
+  from the orchestrator it answers "get uptime of the whole estate" in one
+  command, with per-device CSVs pulled back to `aggregated_logs/`.
 - `bin/run_command_across_dcs.sh` — ad-hoc runner: execute ANY shell command
   on every DC jump (or one, with `--only-dc`) with the same SSH posture as
   the automation fan-out. Streamed per-DC output, summary table, exit code =
