@@ -4,8 +4,9 @@ All pending deliverables — operational AND code — tracked here so they
 survive sessions and operators. Remove items when done (git history keeps
 the record).
 
-Suggested order: **2 → 3 → 0 → rollout → 5 → 1 → 4** (item 2 blocks
-enabling the production reboot cron; item 0 comes before mass rollout).
+Suggested order: **2 → 3 → 0 → rollout → 5 → 1 → 4 → 6** (item 2 blocks
+enabling the production reboot cron; item 0 comes before mass rollout;
+item 6 is best done BEFORE writing the 7-DC datacenters.conf — less to edit).
 
 ## 0. Harden the `netops` OS user on every jump VM (PENDING)
 
@@ -135,3 +136,29 @@ set/reboot). Plan:
 4. docs: MULTIDC security table + MANUAL;
 5. validate on the 2-VM pilot before fleet rollout;
 6. finish with the credential cleanup of item 1 above.
+
+## 6. Centralize the jump service-user name as ONE variable (PENDING)
+
+The `netops` username is currently repeated in many places: every
+`jump_user =` line of `datacenters.conf`, every `repo_path =`
+(`/home/netops/...`), docs examples, ssh-copy-id commands. Renaming the
+user (or using a different one per environment) means touching them all.
+
+Plan:
+- Support a `[defaults]` section in `datacenters.conf`
+  (`parse_datacenters_conf` in `lib/common.sh`):
+
+  ```ini
+  [defaults]
+  jump_user = netops
+  repo_base = /home/netops/nsx-automations
+
+  [DC-1]
+  jump_host = <ip>          # jump_user/repo_path inherited from defaults
+  ```
+
+  Per-section values still override (same pattern as `ssh_key`).
+- Optional env override `NSX_JUMP_USER` for ad-hoc runs — but the conf
+  stays authoritative because cron does not read `~/.bashrc`.
+- Update docs/RUNBOOK examples to define the user once.
+- Keep validation strict (same anti-injection regex on the default values).
