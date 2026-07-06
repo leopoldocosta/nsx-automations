@@ -44,39 +44,72 @@ register_manager_admin_key(){
   local result
 
   log "${ip}: registering SSH key (label='${label}', user='${user}', type='${key_type}')..."
-  # Some NSX builds make `set user ... ssh-keys` re-ask the user's CURRENT
-  # password INSIDE nsxcli ("Password (required only for users root and
-  # admin):", read from stdin when there is no TTY). We answer it by feeding
-  # NSX_PASS on stdin; timeout is a safety net against any other prompt.
+  # Same strategy as the edge registrar (field-hardened on 2 DCs):
+  #   1. modern syntax WITH the inline `password` parameter — some builds
+  #      silently DISCARD the change on a non-TTY session without it
+  #      (empty response, nothing stored);
+  #   2. fallback to the stdin-feed variant when the build lacks the param;
+  #   3. rc=255 (ssh auth/unreachable) reported as such, never as success;
+  #   4. real BatchMode login verification at the end.
   local -a _to=()
   command -v timeout >/dev/null 2>&1 && _to=(timeout 30)
-  result="$(_sshpass_safe NSX_PASS "${_to[@]}" ssh \
-    -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile=/dev/null \
-    -o ConnectTimeout=10 \
-    -o LogLevel=ERROR \
-    "${user}@${ip}" \
-    "set user ${user} ssh-keys label ${label} type ${key_type} value ${pub_val}" \
-    <<<"${NSX_PASS}" 2>&1 || true)"
+  local -a _ssh_base=(ssh
+    -o StrictHostKeyChecking=no
+    -o UserKnownHostsFile=/dev/null
+    -o ConnectTimeout=10
+    -o LogLevel=ERROR
+    "${user}@${ip}")
 
-  # Drop the noise the remote getpass fallback prints on a non-TTY session.
+  local qpass rc=0
+  qpass="${NSX_PASS//\\/\\\\}"; qpass="${qpass//\"/\\\"}"
+  result="$(_sshpass_safe NSX_PASS "${_to[@]}" "${_ssh_base[@]}" \
+    "set user ${user} ssh-keys label ${label} type ${key_type} value ${pub_val} password \"${qpass}\"" \
+    </dev/null 2>&1)" || rc=$?
+
+  if (( rc == 255 )); then
+    log_err "${ip}: SSH as ${user} FAILED — wrong password or host unreachable (nothing was registered)."
+    log "  Inherited credentials from the shell? Clear them:  unset NSX_PASS NSX_USER ROOT_PASS"
+    return 1
+  fi
+  if echo "${result}" | grep -qi "command not found"; then
+    result="$(_sshpass_safe NSX_PASS "${_to[@]}" "${_ssh_base[@]}" \
+      "set user ${user} ssh-keys label ${label} type ${key_type} value ${pub_val}" \
+      <<<"${NSX_PASS}" 2>&1 || true)"
+  fi
+
+  # Drop the noise the remote getpass fallback prints on a non-TTY session,
+  # and never let the password leak into terminal/logs via a CLI error echo.
   result="$(echo "${result}" | grep -viE 'getpass|fallback_getpass|Password input may be echoed|Password \(required' || true)"
+  [[ -n "${NSX_PASS:-}" ]] && result="${result//${NSX_PASS}/***}"
 
   echo "  Return: ${result:-<empty>}"
   if echo "${result}" | grep -qiE "invalid current password"; then
-    log_err "${ip}: NSX rejected the admin password when confirming the change — check the password for '${user}' and rerun."
+    log_err "${ip}: NSX rejected the ${user} password when confirming the change — check it and rerun."
     return 1
   fi
   if echo "${result}" | grep -qiE "already exists|duplicate"; then
     log_ok "${ip}: key already registered (no-op)."
-    return 0
-  fi
-  if echo "${result}" | grep -qiE "${label}|success" || [[ -z "${result}" ]]; then
+  elif echo "${result}" | grep -qiE "${label}|success" || [[ -z "${result}" ]]; then
     log_ok "${ip}: key registered."
-    return 0
+  else
+    log_warn "${ip}: unexpected response — review output above."
+    return 1
   fi
-  log_warn "${ip}: unexpected response — review output above."
-  return 1
+
+  # Trust the lock, verify the door: BatchMode login with the just-registered
+  # key is the only real proof (CLI can accept and store nothing).
+  local priv="${SSH_PRIV:-${HOME}/.ssh/id_rsa}"
+  if [[ -f "${priv}" ]]; then
+    sleep 2
+    if ssh -i "${priv}" -o BatchMode=yes -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR \
+        "${user}@${ip}" "exit" </dev/null &>/dev/null; then
+      log_ok "${ip}: ${user} key VERIFIED (BatchMode login ok)."
+    else
+      log_warn "${ip}: CLI accepted the key but a key-only login still fails — inspect with: ssh ${user}@${ip} then 'get user ${user} ssh-keys'"
+      return 1
+    fi
+  fi
 }
 
 # ---------------------------------------------------------------------------
