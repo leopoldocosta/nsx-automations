@@ -10,7 +10,7 @@
 #                   ── SSH ──► DC-C jump VM ──► NSX of DC-C
 #
 # Each jump VM owns the NSX credentials/keys for its own DC. The orchestrator
-# only needs an SSH key to the jump VMs (default ~/.ssh/nsx_dc_fanout).
+# only needs an SSH key to the jump VMs (default ~/.ssh/orchestrator).
 #
 # Usage:
 #   ./bin/run_across_datacenters.sh \

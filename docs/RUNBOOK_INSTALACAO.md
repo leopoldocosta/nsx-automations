@@ -21,33 +21,33 @@ Referência técnica completa (em inglês): [MULTIDC.md](MULTIDC.md).
 | Jump → internet/proxy (webhook Slack/Teams) | HTTPS | opcional |
 
 Em todas as VMs: Bash ≥ 4.3, `ssh`, `rsync`, `git` (e `sshpass` apenas para o
-registro inicial da chave). Use o **mesmo usuário** em todas (ex.: `nsxops`) —
+registro inicial da chave). Use o **mesmo usuário** em todas (ex.: `netops`) —
 simplifica o `datacenters.conf`.
 
 ---
 
-## Fase 0.5 — Usuário de serviço `nsxops` (1x por VM; única etapa com root)
+## Fase 0.5 — Usuário de serviço `netops` (1x por VM; única etapa com root)
 
 Todo o toolkit roda como um usuário Linux **comum e sem sudo** — se a
 orquestradora for comprometida, o invasor ganha um shell limitado nos jumps,
 não root em todos os datacenters. Em **cada** VM (incluindo a orquestradora):
 
 ```bash
-useradd -m -s /bin/bash nsxops
-passwd nsxops        # senha ÚNICA deste site (cofre); usada só no bootstrap do ssh-copy-id
+useradd -m -s /bin/bash netops
+passwd netops        # senha ÚNICA deste site (cofre); usada só no bootstrap do ssh-copy-id
 ```
 
 Regras:
-- `nsxops` fica **fora** de sudoers/wheel;
+- `netops` fica **fora** de sudoers/wheel;
 - uma senha diferente por site; após o `ssh-copy-id` o acesso é 100% por chave;
-- clone, inventário, chaves NSX e cron: tudo pertence ao `nsxops`
-  (`/home/nsxops/nsx-automations`), nunca ao root;
+- clone, inventário, chaves NSX e cron: tudo pertence ao `netops`
+  (`/home/netops/nsx-automations`), nunca ao root;
 - endurecimento opcional no `sshd_config` do jump:
-  `AllowUsers nsxops@<ip-da-orquestradora>`.
+  `AllowUsers netops@<ip-da-orquestradora>`.
 
 > Se as chaves NSX de um pilotos anterior foram registradas pelo root, use uma
-> label própria ao registrar as do nsxops (ex.:
-> `./bin/configure_ssh_keys.sh --type manager --label nsxops-key`) — labels de
+> label própria ao registrar as do netops (ex.:
+> `./bin/configure_ssh_keys.sh --type manager --label netops-key`) — labels de
 > chave são únicas no NSX. Remova as chaves antigas do root após validar.
 
 ---
@@ -119,14 +119,14 @@ echo 'export NSX_LOG_RETENTION_DAYS=60' >> ~/.bashrc
 cd ~/nsx-automations
 
 # 1. Chave DEDICADA orquestrador→jump (NÃO reutilize a chave do NSX)
-ssh-keygen -t ed25519 -f ~/.ssh/nsx_dc_fanout -N ""
+ssh-keygen -t ed25519 -f ~/.ssh/orchestrator -N ""
 
 # 2. Distribuir a pública para todas as VMs jump (incluindo ela mesma)
 for jump in jump-dc1 jump-dc2 jump-dc3 jump-dc4 jump-dc5 jump-dc6 jump-dc7; do
-  ssh-copy-id -i ~/.ssh/nsx_dc_fanout.pub nsxops@$jump
+  ssh-copy-id -i ~/.ssh/orchestrator.pub netops@$jump
 done
 # Se a orquestradora É o jump do DC dela:
-#   cat ~/.ssh/nsx_dc_fanout.pub >> ~/.ssh/authorized_keys
+#   cat ~/.ssh/orchestrator.pub >> ~/.ssh/authorized_keys
 
 # 3. Inventário dos datacenters
 cp datacenters.conf.example datacenters.conf
@@ -136,15 +136,15 @@ vim datacenters.conf
 ```ini
 [DC-1]
 jump_host = <ip-ou-fqdn-jump-dc1>
-jump_user = nsxops
-repo_path = /home/nsxops/nsx-automations
+jump_user = netops
+repo_path = /home/netops/nsx-automations
 
 # ... [DC-2] a [DC-6] iguais ...
 
 [DC-7]
 jump_host = <ip-jump-dc7>
-jump_user = nsxops
-repo_path = /home/nsxops/nsx-automations
+jump_user = netops
+repo_path = /home/netops/nsx-automations
 ```
 
 > O DC da própria orquestradora entra aqui também, apontando para ela mesma.
@@ -224,7 +224,7 @@ Nada é pulado silenciosamente; com `NSX_NOTIFY_WEBHOOK` configurado, cada
 
 | Sintoma | Causa provável | Ação |
 |---|---|---|
-| `summary.csv` com `exit_code≠0` em um DC | SSH orquestrador→jump | `ssh -i ~/.ssh/nsx_dc_fanout nsxops@<jump>` manual; confira `authorized_keys` |
+| `summary.csv` com `exit_code≠0` em um DC | SSH orquestrador→jump | `ssh -i ~/.ssh/orchestrator netops@<jump>` manual; confira `authorized_keys` |
 | `Permission denied` no jump→NSX | chave não registrada no manager | rode a Fase 1 passo 3 naquele jump |
 | Cron rodou mas nada aconteceu | plano completo | `--show-state`; re-arme com `--reset --yes` |
 | Mesmo manager 2 noites seguidas | falha na 1ª noite (por design) | veja `logs/orchestrator_cron.log` + `aggregated_logs/` da noite anterior |

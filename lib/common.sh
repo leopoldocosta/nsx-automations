@@ -468,7 +468,7 @@ ssh_admin_retry(){
 #   jump_host = <fqdn-or-ip>          # required
 #   jump_user = <username>            # required
 #   repo_path = </abs/path/on/jump>   # required (where nsx-automations is checked out)
-#   ssh_key   = </abs/path/on/orchestrator>   # optional; default ~/.ssh/nsx_dc_fanout
+#   ssh_key   = </abs/path/on/orchestrator>   # optional; default ~/.ssh/orchestrator
 #
 # Populates globals:
 #   DC_COUNT                  - number of datacenters
@@ -491,7 +491,7 @@ parse_datacenters_conf(){
 
   local current_idx=-1 current_label=""
   local line key val
-  local default_key="${NSX_FANOUT_KEY:-${HOME}/.ssh/nsx_dc_fanout}"
+  local default_key="${NSX_FANOUT_KEY:-${HOME}/.ssh/orchestrator}"
 
   # Acceptors
   local re_ipv4='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'

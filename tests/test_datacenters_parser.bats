@@ -37,12 +37,12 @@ setup() {
 
 @test "parse_datacenters_conf: per-section ssh_key override honored" {
   parse_datacenters_conf "${REPO_ROOT}/tests/fixtures/datacenters_basic.conf"
-  [ "$(dc_ssh_key 1)" = "~/.ssh/nsx_dc_fanout_dcb" ]
+  [ "$(dc_ssh_key 1)" = "~/.ssh/orchestrator_dcb" ]
 }
 
 @test "parse_datacenters_conf: default ssh_key applied when not set" {
   parse_datacenters_conf "${REPO_ROOT}/tests/fixtures/datacenters_basic.conf"
-  default_key="${NSX_FANOUT_KEY:-${HOME}/.ssh/nsx_dc_fanout}"
+  default_key="${NSX_FANOUT_KEY:-${HOME}/.ssh/orchestrator}"
   [ "$(dc_ssh_key 0)" = "${default_key}" ]
   [ "$(dc_ssh_key 2)" = "${default_key}" ]
 }

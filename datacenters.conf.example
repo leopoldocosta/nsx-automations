@@ -13,7 +13,7 @@
 #
 # Optional:
 #   ssh_key     Private key on THIS host (the orchestrator) used to reach the
-#               jump VM. Default: $HOME/.ssh/nsx_dc_fanout
+#               jump VM. Default: $HOME/.ssh/orchestrator
 #               (override globally with NSX_FANOUT_KEY=... in the env)
 #
 # Field values are validated against a strict regex (IPv4 / FQDN / username /
@@ -22,16 +22,16 @@
 
 # [DC-A]
 # jump_host = dc-a-jump.internal.example
-# jump_user = nsxops
-# repo_path = /home/nsxops/nsx-automations
+# jump_user = netops
+# repo_path = /home/netops/nsx-automations
 #
 # [DC-B]
 # jump_host = 10.20.0.50
-# jump_user = nsxops
-# repo_path = /home/nsxops/nsx-automations
-# ssh_key   = ~/.ssh/nsx_dc_fanout_dcb     # different key just for DC-B
+# jump_user = netops
+# repo_path = /home/netops/nsx-automations
+# ssh_key   = ~/.ssh/orchestrator_dcb     # different key just for DC-B
 #
 # [DC-C]
 # jump_host = dc-c-jump.internal.example
-# jump_user = nsxops
+# jump_user = netops
 # repo_path = /opt/nsx-automations

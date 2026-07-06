@@ -16,7 +16,7 @@ keeping NSX credentials **scoped to each datacenter**.
                   │  - nsx-automations clone       │
                   │  - datacenters.conf            │
                   │  - aggregated_logs/<ts>/...    │
-                  │  - ~/.ssh/nsx_dc_fanout        │
+                  │  - ~/.ssh/orchestrator         │
                   └───────────────┬────────────────┘
                                   │  SSH (dedicated key, no agent forwarding)
               ┌───────────────────┼────────────────────┐
@@ -41,7 +41,7 @@ keeping NSX credentials **scoped to each datacenter**.
 
 | Principle | How it is enforced |
 |---|---|
-| **Different key per hop** | `orchestrator → jump` uses `~/.ssh/nsx_dc_fanout`. `jump → NSX` uses the key `bin/configure_ssh_keys.sh` registered. They are never the same key. |
+| **Different key per hop** | `orchestrator → jump` uses `~/.ssh/orchestrator`. `jump → NSX` uses the key `bin/configure_ssh_keys.sh` registered. They are never the same key. |
 | **No agent forwarding** | The orchestrator opens every SSH with `-o ForwardAgent=no`. If a jump is compromised it cannot pivot back to other jumps or to NSX in another DC. |
 | **Each jump owns only its DC** | A jump has `managers.conf`/`edge_nodes.txt` for **its own** datacenter only — no cross-DC inventories. Blast radius of a jump compromise = 1 DC. |
 | **No NSX credentials on the orchestrator** | The orchestrator only knows how to reach the jumps. NSX credentials live on the jump where they were registered. |
@@ -84,11 +84,11 @@ git clone https://github.com/leopoldocosta/nsx-automations.git ~/nsx-automations
 cd ~/nsx-automations
 
 # Dedicated key for orchestrator -> jump (NOT the same as the NSX keys)
-ssh-keygen -t ed25519 -f ~/.ssh/nsx_dc_fanout -N ""
+ssh-keygen -t ed25519 -f ~/.ssh/orchestrator -N ""
 
 # Distribute the public key to each jump (one-time)
 for jump in dc-a-jump.internal dc-b-jump.internal dc-c-jump.internal; do
-  ssh-copy-id -i ~/.ssh/nsx_dc_fanout.pub nsxops@$jump
+  ssh-copy-id -i ~/.ssh/orchestrator.pub netops@$jump
 done
 
 # Inventory of datacenters
@@ -230,14 +230,14 @@ aggregated_logs/<YYYYMMDD_HHMMSS>/
 ```ini
 [DC-A]
 jump_host = dc-a-jump.internal.example
-jump_user = nsxops
-repo_path = /home/nsxops/nsx-automations
+jump_user = netops
+repo_path = /home/netops/nsx-automations
 
 [DC-B]
 jump_host = 10.20.0.50
-jump_user = nsxops
-repo_path = /home/nsxops/nsx-automations
-ssh_key   = ~/.ssh/nsx_dc_fanout_dcb     # optional per-section override
+jump_user = netops
+repo_path = /home/netops/nsx-automations
+ssh_key   = ~/.ssh/orchestrator_dcb     # optional per-section override
 ```
 
 | Field | Required | Validation |
@@ -245,7 +245,7 @@ ssh_key   = ~/.ssh/nsx_dc_fanout_dcb     # optional per-section override
 | `jump_host` | yes | IPv4 OR FQDN-like (must contain `.`) |
 | `jump_user` | yes | `[A-Za-z0-9._-]+` |
 | `repo_path` | yes | Absolute path: `^/[A-Za-z0-9._/~-]+$` |
-| `ssh_key` | no  | Absolute or `~`-relative path on the orchestrator. Default `~/.ssh/nsx_dc_fanout` (override globally with `NSX_FANOUT_KEY=…`) |
+| `ssh_key` | no  | Absolute or `~`-relative path on the orchestrator. Default `~/.ssh/orchestrator` (override globally with `NSX_FANOUT_KEY=…`) |
 
 ## CLI reference
 
