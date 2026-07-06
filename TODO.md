@@ -3,6 +3,43 @@
 Operational debts to settle — tracked here so they survive sessions and
 operators. Remove items when done (git history keeps the record).
 
+## 0. Harden the `netops` OS user on every jump VM (PENDING)
+
+`netops` must be a plain user — verify and tighten on each VM:
+
+```bash
+# 1. NOT an admin: no wheel/sudo membership, no sudoers entry
+id netops                                  # groups must list ONLY netops
+gpasswd -d netops wheel 2>/dev/null        # RHEL-family: remove if present
+gpasswd -d netops sudo  2>/dev/null        # Debian-family: remove if present
+grep -r netops /etc/sudoers /etc/sudoers.d/ && echo "REMOVE these entries"
+
+# 2. Key-only access after bootstrap: lock the password
+#    (SSH keys keep working; console/password login stops)
+passwd -l netops
+
+# 3. Private home (blocks other users reading its files, incl. .ssh)
+chmod 700 /home/netops
+
+# 4. sshd: pin where netops can log in from + no password auth
+#    /etc/ssh/sshd_config:
+#      Match User netops
+#          AllowUsers netops@<ip-da-orquestradora>
+#          PasswordAuthentication no
+#    then: systemctl reload sshd
+```
+
+Notes:
+- A plain Linux user can still READ world-readable files (`/etc/*.conf`,
+  binaries) — that is the OS default, not admin access. The line that
+  matters: it must NOT read `/etc/shadow`, write outside its home, or
+  elevate via sudo/su.
+- Do NOT use ForceCommand/rbash for netops: the toolkit needs a real
+  shell (bash -lc) and rsync on the jump side.
+- Stronger isolation (optional, RHEL-family): map netops to a confined
+  SELinux user — `semanage login -a -s user_u netops` (user_u cannot su/sudo
+  at the SELinux layer even if misconfigured elsewhere). Test before fleet.
+
 ## 1. NSX least-privilege user migration — credential cleanup (PENDING)
 
 When the NSX-side user is switched from `admin` to a more restricted one
