@@ -1,7 +1,11 @@
 # TO-DO
 
-Operational debts to settle — tracked here so they survive sessions and
-operators. Remove items when done (git history keeps the record).
+All pending deliverables — operational AND code — tracked here so they
+survive sessions and operators. Remove items when done (git history keeps
+the record).
+
+Suggested order: **2 → 3 → 0 → rollout → 5 → 1 → 4** (item 2 blocks
+enabling the production reboot cron; item 0 comes before mass rollout).
 
 ## 0. Harden the `netops` OS user on every jump VM (PENDING)
 
@@ -75,8 +79,59 @@ the old POCs) and remove what is no longer wanted.
 ### Order matters
 
 1. Register + `VERIFIED` the new restricted user's key everywhere.
-2. Switch the automations to the new user (see harness task #19: per-operation
+2. Switch the automations to the new user (item 5 below: per-operation
    NSX user — read-only automations move first; `manager_rolling_reboot`
    stays on `admin` until NSX offers a restricted role that can reboot).
 3. Run one full fan-out cycle green with the new user.
 4. ONLY THEN delete the admin/root-era keys (NSX side, then VM side).
+
+## 2. Harden `reboot` against the nsxcli yes/no confirmation (PENDING — BLOCKS PROD CRON)
+
+The field build already proved twice (edge AND manager `set user ...`) that
+nsxcli prompts interactively and/or silently discards commands on non-TTY
+sessions. `reboot` classically asks `Are you sure? (yes/no)`. If this build
+does it, the 02:00 cron hangs on night one, silently.
+
+- Fix in `lib/nsx_manager.sh` (`reboot_manager_and_wait` / rolling path):
+  feed `yes` on stdin (`<<<"yes"`), classify the response, never trust an
+  empty answer (pattern established in the key registrars).
+- MUST be validated with one controlled reboot of a single manager in the
+  pilot DC **before** `bin/install_orchestrator_cron.sh` goes live
+  (`--dry-run` does not exercise the real reboot verb).
+
+## 3. Global `NSX_CMD_TIMEOUT` guard in `ssh_admin`/`ssh_root` (PENDING)
+
+Systemic fix for the whole hang class: today only the CONNECTION is bounded
+(`ConnectTimeout`); a remote command that prompts interactively hangs
+forever, silently, under cron. Wrap the ssh invocation in
+`timeout ${NSX_CMD_TIMEOUT:-120}` (lib/common.sh; jumps are Linux, coreutils
+present). Classify rc=124 as "timed out — remote command may be prompting
+interactively (rerun with NSX_DEBUG=1)". Document the env var in
+README/MANUAL cross-cutting tables.
+
+## 4. Audit remaining state-changing CLI verbs for prompts (PENDING)
+
+Same root cause as items 2/3, lower exposure: grep `lib/` and `automations/`
+for remote `set service ssh`, `clear`, `restart`, etc., and check each
+against the field build. Apply the stdin-feed / `</dev/null` guard where a
+prompt is possible (pattern: `lib/nsx_edge.sh` `_register_edge_key`).
+`enable_root_ssh` / `disable_root_ssh` are in the support-bundle and
+key-registration paths — also make them CHECK their rc instead of printing
+"done" unconditionally (a wrong password once produced fake
+"[set ssh root-login] done" output).
+
+## 5. Least-privilege NSX user for read-only automations (PENDING)
+
+NSX appliances ship a built-in `audit` CLI user (read-only, cannot
+set/reboot). Plan:
+1. enable/set password for `audit` on managers + edges;
+2. register the jump's key for `audit` (mind the per-build quirks already
+   solved in the registrars: inline `password` param, modern/legacy syntax,
+   `VERIFIED` check);
+3. toolkit: per-operation NSX user — read-only automations
+   (`device_command`, `kb404700_disk_validation`, `edge_hardware_inventory`,
+   precheck) default to `NSX_USER=audit`; write automations
+   (`manager_rolling_reboot`, support-bundle root toggle) stay `admin`;
+4. docs: MULTIDC security table + MANUAL;
+5. validate on the 2-VM pilot before fleet rollout;
+6. finish with the credential cleanup of item 1 above.
