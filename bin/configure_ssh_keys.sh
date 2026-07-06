@@ -65,11 +65,25 @@ need_cmd ssh
 need_cmd sshpass
 need_cmd ssh-keygen
 
-# Generate / locate the local key
-PUB_VAL="$(ensure_local_ssh_key "${SSH_PRIV}" rsa)"
+# Generate the key if missing (side effect only — we read the values from
+# the .pub FILE, never from captured stdout, so a stray log line can never
+# end up inside the registered key value).
+ensure_local_ssh_key "${SSH_PRIV}" rsa >/dev/null
 PUB_FULL="$(cat "${SSH_PRIV}.pub")"
+PUB_VAL="$(awk '{print $2}' "${SSH_PRIV}.pub")"
 # Detect NSX-CLI key-type token from the OpenSSH header (e.g. "ssh-rsa", "ssh-ed25519")
 PUB_TYPE="$(awk '{print $1}' "${SSH_PRIV}.pub")"
+
+# Sanity: a public key value is pure base64 — anything else means the key
+# material is corrupt and MUST NOT reach `set user ... value ...`.
+if [[ ! "${PUB_VAL}" =~ ^AAAA[A-Za-z0-9+/=]+$ ]]; then
+  log_err "Public key value looks corrupt: '${PUB_VAL:0:40}...' — inspect ${SSH_PRIV}.pub"
+  exit 1
+fi
+if [[ ! "${PUB_TYPE}" =~ ^(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521)$ ]]; then
+  log_err "Unexpected public key type '${PUB_TYPE}' in ${SSH_PRIV}.pub"
+  exit 1
+fi
 log "Local public key: ${PUB_VAL:0:32}... (type=${PUB_TYPE})"
 
 case "${TYPE}" in

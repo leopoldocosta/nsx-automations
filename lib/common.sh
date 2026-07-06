@@ -197,8 +197,12 @@ ensure_local_ssh_key(){
   mkdir -p "$(dirname "${privkey}")"
   chmod 700 "$(dirname "${privkey}")" 2>/dev/null || true
 
+  # This function's stdout is CAPTURED by callers (PUB_VAL="$(...)") — any
+  # log line here MUST go to stderr, or it pollutes the key value that ends
+  # up inside `set user ... value <...>` (field-hit: a manager received a
+  # timestamped log line as the key and silently stored nothing).
   if [[ ! -f "${privkey}" ]]; then
-    log "Generating ${ktype} key pair at ${privkey}..."
+    log "Generating ${ktype} key pair at ${privkey}..." >&2
     if [[ "${ktype}" == "rsa" ]]; then
       ssh-keygen -t rsa -b 2048 -f "${privkey}" -N "" -C "nsx-automation" -q
     else
@@ -207,7 +211,7 @@ ensure_local_ssh_key(){
   fi
 
   if [[ ! -f "${pubkey}" ]]; then
-    log "Extracting public key..."
+    log "Extracting public key..." >&2
     ssh-keygen -y -f "${privkey}" > "${pubkey}"
   fi
 

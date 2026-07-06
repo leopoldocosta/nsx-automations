@@ -162,3 +162,22 @@ Plan:
   stays authoritative because cron does not read `~/.bashrc`.
 - Update docs/RUNBOOK examples to define the user once.
 - Keep validation strict (same anti-injection regex on the default values).
+
+## 7. `configure_ssh_keys.sh --type edge`: register ONLY the root key (PENDING)
+
+Field case (2026-07-06): root passwords are NOT uniform across the edge
+fleet — 4 of 8 edges rejected the typed root password
+(`% Invalid current password specified`) while admin registration
+succeeded everywhere. Re-running today means redoing admin (skipped fast,
+but noisy) AND re-typing the root password for ALL edges when only a few
+failed.
+
+Plan:
+- New flag `--users admin|root|both` (default `both`, current behavior).
+  `--users root` skips admin registration/prompt entirely and only does
+  enable_root_ssh -> register root key -> disable_root_ssh.
+- Combine with `--hosts <file>` pointing at a subset list containing only
+  the failed edges, OR accept `--only <ip>` for a single node.
+- Root passwords may differ per edge: with `--users root`, prompt per host
+  (or re-prompt on "% Invalid current password") instead of assuming one
+  fleet-wide root password.
