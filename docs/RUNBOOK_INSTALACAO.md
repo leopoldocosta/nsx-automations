@@ -220,6 +220,56 @@ Nada é pulado silenciosamente; com `NSX_NOTIFY_WEBHOOK` configurado, cada
 
 ---
 
+## Fase 5 — Onboarding de um NOVO datacenter (checklist por DC)
+
+Com o piloto validado, cada DC novo segue este roteiro (~15 min por DC,
+sem tocar nos DCs já ativos). Validado em campo no piloto de 2 DCs.
+
+```bash
+# ── A. Pré-requisitos (pedir com antecedência, idealmente em lote) ─────────
+#  - firewall: <ip-orquestradora> → <ip-jump-novo> TCP/22
+#  - firewall: <ip-jump-novo> → managers/edges DO DC dele TCP/22
+#  - VM com bash 4.3+, rsync e sshpass instalados
+
+# ── B. Na VM nova, como root (ÚNICA etapa com root; 1 minuto) ──────────────
+useradd -m -s /bin/bash netops
+passwd netops                    # senha única DESTE site (cofre)
+dnf install -y rsync sshpass     # se a imagem não trouxe
+
+# ── C. Na ORQUESTRADORA, como netops ───────────────────────────────────────
+ssh-copy-id -i ~/.ssh/orchestrator.pub netops@<ip-jump-novo>   # senha 1x
+vim datacenters.conf             # +1 seção [DC-X] (jump_host/jump_user/repo_path)
+./bin/run_command_across_dcs.sh --only-dc DC-X -- hostname     # malha ok?
+./bin/deploy.sh --all-dcs --conf ./datacenters.conf            # código chega lá
+#   (o deploy cria o diretório e copia tudo — o jump NÃO precisa de git clone)
+
+# ── D. No jump novo, como netops (via malha) ───────────────────────────────
+ssh -i ~/.ssh/orchestrator netops@<ip-jump-novo>
+cd ~/nsx-automations
+cp inventory/managers.conf.example inventory/managers.conf && vim inventory/managers.conf
+cp inventory/edge_nodes.example inventory/edge_nodes.txt   && vim inventory/edge_nodes.txt
+./bin/configure_ssh_keys.sh --type manager --label netops-key   # exigir VERIFIED
+./bin/configure_ssh_keys.sh --type edge   --label netops-key    # exigir VERIFIED
+./automations/device_command/device_command.sh get uptime       # N/N EXIT 0
+exit
+
+# ── E. Na orquestradora: validação final do DC ─────────────────────────────
+./bin/run_across_datacenters.sh --conf ./datacenters.conf --only-dc DC-X \
+    --automation device_command/device_command.sh -- --cmd "get uptime"
+cat aggregated_logs/<ts>/summary.csv        # exit_code=0 → DC onboarded
+```
+
+Critério de pronto por DC: **todos os registros de chave com `VERIFIED`** e o
+fan-out `--only-dc` com `exit_code=0`. Sem VERIFIED = não avance (as builds
+variam; o script diz exatamente o que investigar quando falha).
+
+Lições do piloto já embutidas nos scripts — se aparecerem, são conhecidas:
+- senha root divergente em edges → registro root falha claro; siga (TODO 7)
+- label já existente de piloto antigo → `del user <u> ssh-keys label <l>` no
+  device e re-execute
+
+---
+
 ## Solução de problemas rápida
 
 | Sintoma | Causa provável | Ação |
