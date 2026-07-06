@@ -107,6 +107,8 @@ register_manager_admin_key(){
       log_ok "${ip}: ${user} key VERIFIED (BatchMode login ok)."
     else
       log_warn "${ip}: CLI accepted the key but a key-only login still fails — inspect with: ssh ${user}@${ip} then 'get user ${user} ssh-keys'"
+      log "  Stored value differs from your key? On the device: del user ${user} ssh-keys label ${label} — then rerun."
+      log "  Value matches? Check algorithm policy: ssh -v -i <key> ${user}@${ip} exit 2>&1 | grep -i 'no mutual'"
       return 1
     fi
   fi
