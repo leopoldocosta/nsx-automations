@@ -62,7 +62,18 @@ else
   [[ -z "${TARGET}" ]] && { log_err "--target is required (or use --all-dcs)."; exit 1; }
 fi
 
-need_cmd rsync || need_cmd scp
+# rsync preferred; scp is a degraded fallback (no stale-code pruning, no
+# excludes protection). NOTE: need_cmd exits on failure, so it cannot be
+# chained with || — test availability explicitly.
+if ! command -v rsync >/dev/null 2>&1; then
+  if command -v scp >/dev/null 2>&1; then
+    log_warn "rsync not found — falling back to scp (no --delete pruning, runtime dirs on the target may be overwritten)."
+    log_warn "Install rsync on BOTH ends for proper deploys: dnf/apt install rsync"
+  else
+    log_err "Neither rsync nor scp found. Install rsync: dnf/apt install rsync"
+    exit 1
+  fi
+fi
 
 # Source paths to copy — identical for single and multi-DC modes.
 # inventory/ is included for its .example templates only: the real host
