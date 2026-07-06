@@ -26,6 +26,32 @@ simplifica o `datacenters.conf`.
 
 ---
 
+## Fase 0.5 — Usuário de serviço `nsxops` (1x por VM; única etapa com root)
+
+Todo o toolkit roda como um usuário Linux **comum e sem sudo** — se a
+orquestradora for comprometida, o invasor ganha um shell limitado nos jumps,
+não root em todos os datacenters. Em **cada** VM (incluindo a orquestradora):
+
+```bash
+useradd -m -s /bin/bash nsxops
+passwd nsxops        # senha ÚNICA deste site (cofre); usada só no bootstrap do ssh-copy-id
+```
+
+Regras:
+- `nsxops` fica **fora** de sudoers/wheel;
+- uma senha diferente por site; após o `ssh-copy-id` o acesso é 100% por chave;
+- clone, inventário, chaves NSX e cron: tudo pertence ao `nsxops`
+  (`/home/nsxops/nsx-automations`), nunca ao root;
+- endurecimento opcional no `sshd_config` do jump:
+  `AllowUsers nsxops@<ip-da-orquestradora>`.
+
+> Se as chaves NSX de um pilotos anterior foram registradas pelo root, use uma
+> label própria ao registrar as do nsxops (ex.:
+> `./bin/configure_ssh_keys.sh --type manager --label nsxops-key`) — labels de
+> chave são únicas no NSX. Remova as chaves antigas do root após validar.
+
+---
+
 ## Fase 1 — Em TODAS as VMs jump (incluindo a orquestradora)
 
 Cada VM conhece **somente os managers do próprio DC** — é esse o isolamento
