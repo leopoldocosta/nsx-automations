@@ -1,3 +1,0 @@
-CMD: set user admin ssh-keys label nsx-automation-key type ssh-rsa value AAAA password "pw"
-CMD: set user admin ssh-keys label nsx-automation-key type ssh-rsa value AAAA
-CMD: set user admin ssh-key "ssh-rsa AAAA c"
