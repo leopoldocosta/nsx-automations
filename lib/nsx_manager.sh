@@ -137,7 +137,12 @@ reboot_manager_and_wait(){
   local waited=0
 
   log "[START] Rebooting ${ip}..."
-  ssh_admin "$ip" "reboot" || true
+  # NSX CLI `reboot` asks "Are you sure you want to reboot (yes/no)" even on
+  # a non-TTY session — without feeding the answer the CLI blocks (no prompt
+  # visible) until its idle timeout and the manager NEVER reboots
+  # (field-hit on 4.1.2: ~7min hang, then a no-op). Feed the confirmation
+  # via stdin, same stdin-feed strategy as the key registrars.
+  ssh_admin "$ip" "reboot" <<<"yes" || true
 
   log "[WAITING] ${ip} to drop offline..."
   while tcp_check "$ip" "${NSX_SSH_PORT}" && [ $waited -lt "${NSX_REBOOT_MAX_WAIT}" ]; do
@@ -145,10 +150,14 @@ reboot_manager_and_wait(){
   done
 
   if tcp_check "$ip" "${NSX_SSH_PORT}"; then
-    log_warn "${ip}: did not drop offline after ${NSX_REBOOT_MAX_WAIT}s."
-  else
-    log "[DOWN] ${ip} offline. Waiting for return..."
+    # Still online = the reboot never took effect (confirmation rejected,
+    # RBAC, ...). Continuing would trivially pass the TCP-up and STABLE
+    # gates and report SUCCESS for a manager that never rebooted — in the
+    # daily orchestrator mode that silently advances the plan index.
+    log_err "${ip}: still online after ${NSX_REBOOT_MAX_WAIT}s — reboot did NOT take effect. Aborting this cycle."
+    return 1
   fi
+  log "[DOWN] ${ip} offline. Waiting for return..."
 
   waited=0
   while ! tcp_check "$ip" "${NSX_SSH_PORT}" && [ $waited -lt "${NSX_REBOOT_MAX_WAIT}" ]; do

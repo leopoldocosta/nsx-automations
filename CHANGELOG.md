@@ -118,6 +118,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - `bin/deploy.sh` no longer uses `eval`; commands run via argv array.
 
 ### Fixed
+- **`reboot_manager_and_wait` never actually rebooted the manager.** The NSX
+  CLI `reboot` command asks `Are you sure you want to reboot (yes/no)` even
+  on a non-TTY SSH session, but shows no prompt — the session blocked until
+  the CLI idle timeout (~7 min observed on 4.1.2.3) and the manager stayed
+  up. The confirmation is now fed via stdin (`<<<"yes"`), the same
+  stdin-feed strategy already used by the key registrars. Additionally, a
+  manager that does not drop offline within `NSX_REBOOT_MAX_WAIT` is now a
+  **hard failure** (rc=1) instead of a warning — previously the cycle would
+  trivially pass the TCP-up and STABLE gates and report success for a
+  manager that never rebooted, silently advancing the daily orchestrator's
+  plan index.
 - **`bin/deploy.sh` no longer destroys target-side state on re-deploy.**
   The rsync used `--delete-excluded`, which deletes *excluded* paths on the
   receiver — every re-deploy wiped the jump's `.ssh_keys/` (registered NSX
