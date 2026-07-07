@@ -71,7 +71,9 @@ these; they are listed here so the cleanup crew knows what each name is):
 | DC | netops key label | why |
 |---|---|---|
 | DC-A, DC-B (pilot) | `netops-key` | default label was taken by the root pilot key |
-| DC-C onwards | `nsx-automation-key` (default) | fresh devices, no collision |
+| DC-C managers | `nsx-automation-key` (default) | fresh — pilot never labeled the managers there |
+| DC-C edges | `netops-key` | default label taken by the Jul-03 pilot root key on all 8 edges |
+| DC-D onwards | default expected | use `--label netops-key` only if a device answers "already exists" |
 
 Optional post-cleanup normalization: after removing the root-era
 `nsx-automation-key` from DC-A/DC-B devices, re-register netops there
