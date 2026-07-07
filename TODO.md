@@ -181,3 +181,29 @@ Plan:
 - Root passwords may differ per edge: with `--users root`, prompt per host
   (or re-prompt on "% Invalid current password") instead of assuming one
   fleet-wide root password.
+
+## 8. Slack webhook: error notifications from every jump (PENDING)
+
+Wire `NSX_NOTIFY_WEBHOOK` fleet-wide so every `log_err` from any automation
+(including the 02:00 rolling-reboot cron) lands in a Slack channel. The
+hook already exists in `lib/common.sh:log_err` — this item is deployment.
+
+Steps:
+1. Create the Incoming Webhook in Slack (channel do time, ex. #nsx-ops)
+   and store the URL in the team vault.
+2. Firewall: each jump needs outbound HTTPS to hooks.slack.com
+   (Fase 0 optional row — request for all 7 in one ticket).
+3. Set on every jump in one shot (bash -lc loads ~/.bashrc on the
+   fan-out's login shell, so this works for cron-triggered runs too):
+
+   ```bash
+   ./bin/run_command_across_dcs.sh -- \
+     "grep -q NSX_NOTIFY_WEBHOOK ~/.bashrc || echo 'export NSX_NOTIFY_WEBHOOK=https://hooks.slack.com/services/XXX/YYY/ZZZ' >> ~/.bashrc"
+   ```
+
+4. Test end-to-end: force one failure (e.g. device_command against a
+   bogus IP added to a subset host file) and confirm the message arrives:
+   `[NSX][<jump-hostname>] ERR: ...`
+5. Note: delivery is best-effort by design — a dead webhook never blocks
+   or masks the original error. Do NOT put the URL in the repo (treat it
+   as a credential; it allows posting to the channel).
