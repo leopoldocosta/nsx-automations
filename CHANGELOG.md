@@ -8,6 +8,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`notify.conf` — central per-VM notification config**: `[slack] webhook`
+  plus `[notify]` policy per automation (`errors`/`none`, `default` key,
+  automation folder name as key; bin/ tools report as `orchestrator`).
+  `log_err` consults it before posting; `NSX_NOTIFY_WEBHOOK` env still
+  overrides everything (legacy opt-in behavior). Webhook value validated
+  against a strict URL regex; the real file is git-ignored (credential),
+  `notify.conf.example` committed.
 - New automation `device_command/`: run a read-only NSX CLI command on every
   device of the local DC — all manager clusters (multi-cluster aware, e.g.
   infrabase + workload domain) and/or all edge nodes — producing a

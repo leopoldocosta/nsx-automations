@@ -1,0 +1,27 @@
+# notify.conf.example — Slack/Teams error notifications, per VM.
+#
+# Copy to notify.conf (git-ignored) and RESTRICT it — the webhook URL is a
+# credential (whoever has it can post to the channel):
+#   cp notify.conf.example notify.conf && chmod 600 notify.conf
+#
+# Every log_err from an enabled automation POSTs one line to the webhook:
+#   [NSX][<hostname-do-jump>] ERR: <mensagem>
+#
+# Precedence: the NSX_NOTIFY_WEBHOOK env var, when set, overrides this file
+# entirely (always notifies errors). Delivery is best-effort — a dead
+# webhook never blocks a run nor masks the original error.
+
+[slack]
+# Incoming Webhook do canal (Slack ou Teams — mesmo formato de POST JSON)
+webhook = https://hooks.slack.com/services/XXX/YYY/ZZZ
+
+[notify]
+# Política por automação: errors | none
+# A chave é o nome da PASTA da automação (automations/<nome>/).
+# "default" cobre tudo que não tiver linha própria.
+default = errors
+
+# Exemplos de override:
+# device_command = none              # consultas ad-hoc não precisam alarmar
+# manager_rolling_reboot = errors    # o cron das 02:00 SEMPRE deve alarmar
+# orchestrator = errors              # scripts de bin/ na orquestradora

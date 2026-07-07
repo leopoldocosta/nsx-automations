@@ -59,9 +59,34 @@ cd automations/<name>
 
 Each automation writes timestamped logs to its own `logs/` (git-ignored). At the end of each run, `rotate_logs` prunes files older than `NSX_LOG_RETENTION_DAYS` (default 30) — set it to `0` to keep everything.
 
-## Notifications (optional)
+## Notifications (optional) — notify.conf
 
-Set `NSX_NOTIFY_WEBHOOK=https://hooks.example/...` (Slack/Teams compatible) and every `log_err` call POSTs a one-line summary to the webhook. Best-effort and never blocks the run — a broken webhook will not mask the original error.
+Central per-VM config deciding **which automations** post errors to a
+Slack/Teams channel:
+
+```bash
+cp notify.conf.example notify.conf && chmod 600 notify.conf   # git-ignored
+vim notify.conf
+```
+
+```ini
+[slack]
+webhook = https://hooks.slack.com/services/XXX/YYY/ZZZ
+
+[notify]
+default = errors                 # policy for every automation: errors | none
+device_command = none            # per-automation override (folder name)
+manager_rolling_reboot = errors
+orchestrator = errors            # the bin/ tools on the orchestrator
+```
+
+Each `log_err` from an enabled automation POSTs `[NSX][<host>] ERR: <msg>`
+to the webhook. Best-effort and never blocks the run — a broken webhook will
+not mask the original error. The webhook URL is a **credential** (posting
+rights to the channel): keep the file mode 600, never commit it.
+
+The `NSX_NOTIFY_WEBHOOK` env var, when set, overrides the file entirely
+(always notifies errors) — handy for ad-hoc runs.
 
 ## Debugging SSH issues
 

@@ -208,7 +208,8 @@ Steps:
    and store the URL in the team vault.
 2. Firewall: each jump needs outbound HTTPS to hooks.slack.com
    (Fase 0 optional row — request for all 7 in one ticket).
-3. Set on every jump in one shot (bash -lc loads ~/.bashrc on the
+3. Set on every jump: copy notify.conf.example to notify.conf (chmod 600),
+   fill webhook + per-automation policy. Legacy alternative (env var on the
    fan-out's login shell, so this works for cron-triggered runs too):
 
    ```bash

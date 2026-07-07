@@ -31,6 +31,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 export AUTO_DIR="${REPO_ROOT}"
+export NSX_AUTOMATION_NAME="orchestrator"   # notify.conf key for bin/ tools
 # shellcheck source=../lib/common.sh
 source "${REPO_ROOT}/lib/common.sh"
 

@@ -86,18 +86,82 @@ fi
 log()      { printf '%s[%s]%s %s\n'           "${C_CYAN}"    "$(date '+%F %T')" "${C_RESET}" "$*"; }
 log_ok()   { printf '%s[%s] [OK]%s   %s\n'    "${C_GREEN}"   "$(date '+%F %T')" "${C_RESET}" "$*"; }
 log_warn() { printf '%s[%s] [WARN]%s %s\n'    "${C_YELLOW}"  "$(date '+%F %T')" "${C_RESET}" "$*"; }
+
+# ---------------------------------------------------------------------------
+# Slack/Teams notifications — central per-VM config (notify.conf)
+#
+# notify.conf at the repo root (git-ignored; copy from notify.conf.example,
+# chmod 600 — the webhook URL is a credential) decides WHO notifies:
+#
+#   [slack]
+#   webhook = https://hooks.slack.com/services/XXX/YYY/ZZZ
+#   [notify]
+#   default = errors            # errors | none — policy for everything
+#   device_command = none       # per-automation override (folder name)
+#
+# Precedence: the NSX_NOTIFY_WEBHOOK env var, when set, overrides the file
+# entirely (always notifies errors — the original opt-in behavior).
+# Automation identity = NSX_AUTOMATION_NAME if exported, else basename of
+# AUTO_DIR (the automation folder). Never blocks, never masks the error.
+# ---------------------------------------------------------------------------
+_notify_load(){
+  [[ -n "${_NOTIFY_LOADED:-}" ]] && return 0
+  _NOTIFY_LOADED=1
+  _NOTIFY_WEBHOOK=""
+  declare -gA _NOTIFY_LEVEL=()
+  local f="${NSX_NOTIFY_CONF:-${REPO_ROOT}/notify.conf}"
+  [[ -f "${f}" ]] || return 0
+  local section="" line key val
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "${line}" ]] && continue
+    if [[ "${line}" =~ ^\[([A-Za-z0-9._-]+)\]$ ]]; then section="${BASH_REMATCH[1]}"; continue; fi
+    key="${line%%=*}";  key="${key%"${key##*[![:space:]]}"}"
+    val="${line#*=}";   val="${val#"${val%%[![:space:]]*}"}"
+    case "${section}" in
+      slack)
+        # Strict URL shape — a webhook is the only thing that belongs here.
+        if [[ "${key}" == "webhook" && "${val}" =~ ^https://[A-Za-z0-9./_-]+$ ]]; then
+          _NOTIFY_WEBHOOK="${val}"
+        fi ;;
+      notify)
+        if [[ "${key}" =~ ^[A-Za-z0-9._-]+$ && "${val}" =~ ^(errors|none)$ ]]; then
+          _NOTIFY_LEVEL["${key}"]="${val}"
+        fi ;;
+    esac
+  done < "${f}"
+}
+
+# Echoes the webhook to use for the CURRENT automation, or returns 1 when
+# notifications are off for it.
+_notify_webhook_for_current(){
+  if [[ -n "${NSX_NOTIFY_WEBHOOK:-}" ]]; then
+    printf '%s' "${NSX_NOTIFY_WEBHOOK}"; return 0
+  fi
+  _notify_load
+  [[ -n "${_NOTIFY_WEBHOOK:-}" ]] || return 1
+  local name level
+  name="${NSX_AUTOMATION_NAME:-$(basename "${AUTO_DIR}")}"
+  level="${_NOTIFY_LEVEL[${name}]:-${_NOTIFY_LEVEL[default]:-errors}}"
+  [[ "${level}" == "errors" ]] || return 1
+  printf '%s' "${_NOTIFY_WEBHOOK}"
+}
+
 log_err()  {
   printf '%s[%s] [ERR]%s  %s\n' "${C_RED}" "$(date '+%F %T')" "${C_RESET}" "$*"
-  # Optional outbound notification on errors (Slack/Teams-compatible webhook).
-  # Opt-in via NSX_NOTIFY_WEBHOOK=<url>. We never block on this — failures are
-  # silent so an unavailable webhook doesn't mask the original error.
-  if [[ -n "${NSX_NOTIFY_WEBHOOK:-}" ]] && command -v curl >/dev/null 2>&1; then
+  # Outbound notification on errors — gated per automation by notify.conf
+  # (or forced on by NSX_NOTIFY_WEBHOOK). Best-effort: failures are silent
+  # so an unavailable webhook doesn't mask the original error.
+  local _wh=""
+  _wh="$(_notify_webhook_for_current 2>/dev/null || true)"
+  if [[ -n "${_wh}" ]] && command -v curl >/dev/null 2>&1; then
     local _host; _host="$(hostname 2>/dev/null || echo unknown)"
     local _payload
     _payload="$(printf '{"text":"[NSX][%s] ERR: %s"}' "${_host}" "$*" | sed 's/[[:cntrl:]]//g')"
     curl -sS -X POST -H 'Content-Type: application/json' \
       --max-time 5 --data "${_payload}" \
-      "${NSX_NOTIFY_WEBHOOK}" >/dev/null 2>&1 || true
+      "${_wh}" >/dev/null 2>&1 || true
   fi
 }
 
