@@ -103,6 +103,9 @@ vim datacenters.conf
 
 ### Daily rolling reboot — 1 manager / day, multi-DC
 
+> Runbook operacional em português:
+> [RUNBOOK_ROLLING_REBOOT.md](RUNBOOK_ROLLING_REBOOT.md).
+
 Production cadence for KB 396719 mitigation. Instead of "reboot every manager on day 1 of the month" (the old per-jump cron), the orchestrator reboots **one manager per day** following an ordered plan. With ~21 managers across multiple DCs, the cycle runs ~21 days and then idles until the operator resets the plan.
 
 ```bash

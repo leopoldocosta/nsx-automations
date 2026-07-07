@@ -55,7 +55,8 @@ nsx-automations/
 │   ├── CONTRIBUTING.md
 │   ├── ARCHITECTURE.md
 │   ├── MULTIDC.md            # hub-and-spoke topology + datacenters.conf schema
-│   ├── RUNBOOK_INSTALACAO.md # PT-BR: passo a passo de instalação multi-DC
+│   ├── RUNBOOK_INSTALACAO.md    # PT-BR: instalação da plataforma multi-DC
+│   ├── RUNBOOK_ROLLING_REBOOT.md# PT-BR: operação do rolling reboot (plano+cron)
 │   └── GO_FRAMEWORK.md       # language strategy reference (Bash default, Go on demand)
 │
 ├── inventory/                # CENTRAL per-DC host inventory — single source of truth
