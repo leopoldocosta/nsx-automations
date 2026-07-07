@@ -38,7 +38,7 @@ NSX_SSH_PORT="${NSX_SSH_PORT:-22}"
 register_manager_admin_key(){
   local ip="$1"
   local pub_val="$2"
-  local label="${3:-nsx-automation-key}"
+  local label="${3:-netops-key}"
   local key_type="${4:-ssh-rsa}"
   local user="${NSX_USER:-admin}"
   local result

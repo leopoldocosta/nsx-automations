@@ -49,10 +49,11 @@ Regras:
 - endurecimento opcional no `sshd_config` do jump:
   `AllowUsers netops@<ip-da-orquestradora>`.
 
-> Se as chaves NSX de um pilotos anterior foram registradas pelo root, use uma
-> label própria ao registrar as do netops (ex.:
-> `./bin/configure_ssh_keys.sh --type manager --label netops-key`) — labels de
-> chave são únicas no NSX. Remova as chaves antigas do root após validar.
+> A label padrão das chaves do netops é `netops-key`. Se um device antigo já
+> tiver essa label ocupada (registro responde "already exists" e a verificação
+> falha), registre com `--label <outro-nome>` — labels são únicas por device.
+> Chaves de pilotos antigos (`nsx-automation-key`, `rsa-key-*`) saem na
+> limpeza do TODO item 1, sempre DEPOIS da nova estar VERIFIED.
 
 ---
 
@@ -103,7 +104,7 @@ admin_user = admin
 # 3. Registrar a chave SSH desta VM nos managers do DC local
 #    (pede a senha admin UMA vez; depois nunca mais)
 #    --hosts é opcional: o default é o inventory/ central
-#    A chave entra com a label padrão "nsx-automation-key" — use
+#    A chave entra com a label padrão "netops-key" — use
 #    --label <outro-nome> APENAS se essa label já estiver ocupada no
 #    device por uma chave antiga (o registro avisa "already exists" e
 #    a verificação falha; labels são únicas por device).

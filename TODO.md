@@ -65,19 +65,20 @@ del user admin ssh-keys label netops-key            # only after the new user is
 Also check for pre-toolkit leftovers (e.g. `rsa-key-2024xxxx` labels from
 the old POCs) and remove what is no longer wanted.
 
-Label map as of the 2026-07 rollout (netops's ACTIVE keys — do not delete
-these; they are listed here so the cleanup crew knows what each name is):
+**Fleet standard: `netops-key` is the ACTIVE label everywhere** (script
+default since 2026-07-06). Cleanup rule: delete `nsx-automation-key` and
+pre-toolkit labels (`rsa-key-*` unwanted) from every device — with ONE
+prerequisite:
 
-| DC | netops key label | why |
-|---|---|---|
-| DC-A, DC-B (pilot) | `netops-key` | default label was taken by the root pilot key |
-| DC-C managers | `nsx-automation-key` (default) | fresh — pilot never labeled the managers there |
-| DC-C edges | `netops-key` | default label taken by the Jul-03 pilot root key on all 8 edges |
-| DC-D onwards | default expected | use `--label netops-key` only if a device answers "already exists" |
-
-Optional post-cleanup normalization: after removing the root-era
-`nsx-automation-key` from DC-A/DC-B devices, re-register netops there
-under the default label and delete `netops-key` — one label fleet-wide.
+> **DC-C managers hold netops's ACTIVE key under `nsx-automation-key`**
+> (registered 2026-07-06 while it was still the script default). BEFORE the
+> global delete, migrate the label there:
+> 1. `./bin/configure_ssh_keys.sh --type manager` (now defaults to
+>    netops-key) — if the build rejects a duplicate VALUE, `del user admin
+>    ssh-keys label nsx-automation-key` on the device first (password auth
+>    still works), then rerun;
+> 2. require VERIFIED;
+> 3. only then `nsx-automation-key` is safe to delete fleet-wide.
 
 > Tip: fan the listing out with
 > `bin/run_across_datacenters.sh --automation device_command/device_command.sh -- --cmd "get user admin ssh-keys"`

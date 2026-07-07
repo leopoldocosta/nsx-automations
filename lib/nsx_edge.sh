@@ -258,7 +258,7 @@ _classify_set_user_ssh_key_result(){
 # "Command not found". The current password of the target user is fed on
 # stdin for builds that re-ask it inside nsxcli.
 _register_edge_key(){
-  local ip="$1" user="$2" pub_full="$3" confirm_pass="$4" label="${5:-nsx-automation-key}"
+  local ip="$1" user="$2" pub_full="$3" confirm_pass="$4" label="${5:-netops-key}"
   local ktype kval result qpass
   ktype="$(awk '{print $1}' <<<"${pub_full}")"
   kval="$(awk '{print $2}' <<<"${pub_full}")"
@@ -316,7 +316,7 @@ _register_edge_key(){
 register_edge_admin_key(){
   local ip="$1"
   local pub_full="$2"   # full line: "ssh-ed25519 AAAA... comment"
-  local label="${3:-nsx-automation-key}"
+  local label="${3:-netops-key}"
   log "${ip}: registering admin SSH key..."
   _register_edge_key "${ip}" admin "${pub_full}" "${NSX_PASS:-}" "${label}"
 }
@@ -324,7 +324,7 @@ register_edge_admin_key(){
 register_edge_root_key(){
   local ip="$1"
   local pub_full="$2"
-  local label="${3:-nsx-automation-key}"
+  local label="${3:-netops-key}"
   local rc
   enable_root_ssh "$ip"
   sleep 2

@@ -19,7 +19,7 @@
 #                               detected from the .pub header and passed through
 #                               to the NSX CLI, so both RSA and ed25519 work.
 #   --label <text>              Label used in `set user ... ssh-keys label ...`
-#                               (manager only). Default: nsx-automation-key
+#                               (manager only). Default: netops-key
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,7 +30,7 @@ source "${REPO_ROOT}/lib/common.sh"
 TYPE=""
 HOSTS_FILE=""
 SSH_PRIV="${HOME}/.ssh/id_rsa"
-KEY_LABEL="nsx-automation-key"
+KEY_LABEL="netops-key"
 
 usage(){ grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
