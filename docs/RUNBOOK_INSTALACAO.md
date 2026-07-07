@@ -103,6 +103,10 @@ admin_user = admin
 # 3. Registrar a chave SSH desta VM nos managers do DC local
 #    (pede a senha admin UMA vez; depois nunca mais)
 #    --hosts é opcional: o default é o inventory/ central
+#    A chave entra com a label padrão "nsx-automation-key" — use
+#    --label <outro-nome> APENAS se essa label já estiver ocupada no
+#    device por uma chave antiga (o registro avisa "already exists" e
+#    a verificação falha; labels são únicas por device).
 ./bin/configure_ssh_keys.sh --type manager
 
 # 4. Validação: o próprio passo 3 já imprime "VERIFIED (BatchMode login ok)"
@@ -223,8 +227,9 @@ ssh -i ~/.ssh/orchestrator netops@<ip-jump-novo>
 cd ~/nsx-automations
 cp inventory/managers.conf.example inventory/managers.conf && vim inventory/managers.conf
 cp inventory/edge_nodes.example inventory/edge_nodes.txt   && vim inventory/edge_nodes.txt
-./bin/configure_ssh_keys.sh --type manager --label netops-key   # exigir VERIFIED
-./bin/configure_ssh_keys.sh --type edge   --label netops-key    # exigir VERIFIED
+./bin/configure_ssh_keys.sh --type manager    # exigir VERIFIED (label padrão)
+./bin/configure_ssh_keys.sh --type edge       # exigir VERIFIED
+#   (--label <nome> só se a label padrão já existir no device — ver Fase 1)
 ./automations/device_command/device_command.sh get uptime       # N/N EXIT 0
 exit
 
