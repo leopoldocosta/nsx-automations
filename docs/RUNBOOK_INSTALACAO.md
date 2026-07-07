@@ -105,8 +105,12 @@ admin_user = admin
 #    --hosts é opcional: o default é o inventory/ central
 ./bin/configure_ssh_keys.sh --type manager
 
-# 4. Validar que a chave pegou (não deve pedir senha)
-ssh -o BatchMode=yes admin@<mgr1-ip> "get cluster status" | head -5
+# 4. Validação: o próprio passo 3 já imprime "VERIFIED (BatchMode login ok)"
+#    por device — esse é o critério de pronto. Conferência manual (opcional):
+ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+    admin@<mgr1-ip> "get cluster status" | head -5
+#    (o accept-new evita o "Host key verification failed" da 1ª conexão —
+#     os scripts do toolkit já tratam isso sozinhos; só o ssh manual pede)
 
 # 5. Opcional: webhook de erro + retenção de logs
 echo 'export NSX_NOTIFY_WEBHOOK=https://hooks...' >> ~/.bashrc
