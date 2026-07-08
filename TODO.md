@@ -107,19 +107,20 @@ prerequisite:
 3. Run one full fan-out cycle green with the new user.
 4. ONLY THEN delete the admin/root-era keys (NSX side, then VM side).
 
-## 2. Harden `reboot` against the nsxcli yes/no confirmation (PENDING — BLOCKS PROD CRON)
+## 2. Harden `reboot` against the nsxcli yes/no confirmation (CODE DONE — VALIDATION PENDING, BLOCKS PROD CRON)
 
-The field build already proved twice (edge AND manager `set user ...`) that
-nsxcli prompts interactively and/or silently discards commands on non-TTY
-sessions. `reboot` classically asks `Are you sure? (yes/no)`. If this build
-does it, the 02:00 cron hangs on night one, silently.
+CODE SHIPPED (commit 45a84fb): `reboot_manager_and_wait` feeds `yes` via
+stdin (field-hit on 4.1.2: without it the CLI blocked ~7min and the node
+never rebooted) AND aborts the cycle with an error if the manager is
+still online after `NSX_REBOOT_MAX_WAIT` — a no-op reboot can no longer
+silently advance the daily plan index.
 
-- Fix in `lib/nsx_manager.sh` (`reboot_manager_and_wait` / rolling path):
-  feed `yes` on stdin (`<<<"yes"`), classify the response, never trust an
-  empty answer (pattern established in the key registrars).
-- MUST be validated with one controlled reboot of a single manager in the
-  pilot DC **before** `bin/install_orchestrator_cron.sh` goes live
-  (`--dry-run` does not exercise the real reboot verb).
+REMAINING before `bin/install_orchestrator_cron.sh` goes live:
+- One CONTROLLED real reboot of a single manager (plan entry #1, run
+  `bin/rolling_reboot_next.sh` manually in a maintenance-ok window) and
+  watch: reboot fires -> TCP drops -> returns -> cluster STABLE ->
+  index advances to 1. `--dry-run` does NOT exercise the real verb.
+- Then `--reset --yes` on the eve of day 01 and install the cron.
 
 ## 3. Global `NSX_CMD_TIMEOUT` guard in `ssh_admin`/`ssh_root` (PENDING)
 
