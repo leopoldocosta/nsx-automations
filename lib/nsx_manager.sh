@@ -60,18 +60,29 @@ register_manager_admin_key(){
     -o LogLevel=ERROR
     "${user}@${ip}")
 
-  local qpass rc=0
-  qpass="${NSX_PASS//\\/\\\\}"; qpass="${qpass//\"/\\\"}"
-  result="$(_sshpass_safe NSX_PASS "${_to[@]}" "${_ssh_base[@]}" \
-    "set user ${user} ssh-keys label ${label} type ${key_type} value ${pub_val} password \"${qpass}\"" \
-    </dev/null 2>&1)" || rc=$?
-
-  if (( rc == 255 )); then
-    log_err "${ip}: SSH as ${user} FAILED — wrong password or host unreachable (nothing was registered)."
-    log "  Inherited credentials from the shell? Clear them:  unset NSX_PASS NSX_USER ROOT_PASS"
-    return 1
+  # QUOTING: nsxcli tokenizes with Python shlex ("No closing quotation" is
+  # its error) and does NOT process backslash escapes inside quotes — pick
+  # the quote character by the password's content instead; if the password
+  # has BOTH quote chars, inline is impossible: use the stdin variant.
+  local inline_ok=true q="" rc=0
+  if [[ "${NSX_PASS}" != *"'"* ]]; then q="'"
+  elif [[ "${NSX_PASS}" != *'"'* ]]; then q='"'
+  else inline_ok=false
   fi
-  if echo "${result}" | grep -qi "command not found"; then
+
+  result=""
+  if "${inline_ok}"; then
+    result="$(_sshpass_safe NSX_PASS "${_to[@]}" "${_ssh_base[@]}" \
+      "set user ${user} ssh-keys label ${label} type ${key_type} value ${pub_val} password ${q}${NSX_PASS}${q}" \
+      </dev/null 2>&1)" || rc=$?
+
+    if (( rc == 255 )); then
+      log_err "${ip}: SSH as ${user} FAILED — wrong password or host unreachable (nothing was registered)."
+      log "  Inherited credentials from the shell? Clear them:  unset NSX_PASS NSX_USER ROOT_PASS"
+      return 1
+    fi
+  fi
+  if ! "${inline_ok}" || echo "${result}" | grep -qiE "command not found|syntax error|no closing quotation"; then
     result="$(_sshpass_safe NSX_PASS "${_to[@]}" "${_ssh_base[@]}" \
       "set user ${user} ssh-keys label ${label} type ${key_type} value ${pub_val}" \
       <<<"${NSX_PASS}" 2>&1 || true)"
