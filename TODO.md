@@ -44,6 +44,12 @@ Notes:
 - Stronger isolation (optional, RHEL-family): map netops to a confined
   SELinux user — `semanage login -a -s user_u netops` (user_u cannot su/sudo
   at the SELinux layer even if misconfigured elsewhere). Test before fleet.
+- **Set a UNIQUE hostname per jump** (`hostnamectl set-hostname jump-dc-<x>`,
+  as root). Field finding 2026-07-07: five jumps cloned from the same
+  template all answered `dev-redes` (+1 typo'd `deve-redes`) — operators
+  cannot tell sessions apart and every log/notification says the same host.
+  The Slack notifications (`[NSX][<hostname>] ERR:`) are useless until this
+  is fixed.
 
 ## 1. NSX least-privilege user migration — credential cleanup (PENDING)
 
