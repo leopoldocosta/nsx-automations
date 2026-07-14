@@ -230,3 +230,30 @@ Steps:
 5. Note: delivery is best-effort by design — a dead webhook never blocks
    or masks the original error. Do NOT put the URL in the repo (treat it
    as a credential; it allows posting to the channel).
+
+## 9. Secure NSX Policy API login for `lib/nsx_api.sh` (PENDING)
+
+Today `lb_troubleshoot` (and anything future on `lib/nsx_api.sh`) uses
+Basic Auth: the admin password must pre-exist on the jump for fan-out runs
+— either `run/session.env` (mode 600, saved manually per shift) or
+`NSX_USER`/`NSX_PASS` in the environment. It never touches `ps` or the
+orchestrator, but it is still a standing plaintext-at-rest password on
+the jump. Replace with something that removes the stored password:
+
+Plan (in preference order):
+1. **Certificate-based Principal Identity** (the NSX-native way):
+   generate a key+cert per jump, register it as a Principal Identity on
+   the local NSX with a scoped role (read-only for diagnosis; the
+   `--fix-monitor` PATCH needs `lb_admin`-level), and teach `_nsx_curl`
+   to use `--cert/--key` when `NSX_API_CERT`/`NSX_API_KEY` are set —
+   Basic Auth stays as fallback. Registration step belongs in
+   `bin/configure_ssh_keys.sh` or a sibling `bin/configure_api_identity.sh`.
+2. **Session-token auth** as an intermediate hardening: exchange
+   user/password for a short-lived session cookie + X-XSRF token at run
+   start (`/api/session/create`), so the password is used once per run
+   instead of on every request. Still needs the stored password — does
+   not close the item alone.
+3. Whatever lands: per-DC scoping stays (identity registered per jump on
+   ITS NSX only — same blast-radius model as the SSH keys), document in
+   MULTIDC security table + the automation README, and align the RBAC
+   role with item 5 (least-privilege user migration).
