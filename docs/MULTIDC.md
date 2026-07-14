@@ -200,6 +200,14 @@ Full automations across DCs:
    --conf ./datacenters.conf \
    --parallel 3 \
    --automation kb404700_disk_validation/kb404700_disk_validation.sh
+
+# Troubleshoot a native LB that lives in DC-B (jump resolves its own manager
+# from inventory/managers.conf; report pulled back to aggregated_logs/)
+./bin/run_across_datacenters.sh \
+   --conf ./datacenters.conf \
+   --only-dc DC-B \
+   --automation lb_troubleshoot/lb_troubleshoot.sh -- \
+   --vip 10.10.0.34 --port 4010 --member 10.10.1.11 --member-port 4010
 ```
 
 ### Keeping every jump in sync with main

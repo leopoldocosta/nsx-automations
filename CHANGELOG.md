@@ -8,6 +8,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- New library `lib/nsx_api.sh`: NSX Manager/Policy REST helpers — safe Basic-Auth
+  curl (credentials never reach `ps`; any special character accepted via raw
+  base64), GET/PATCH, cursor pagination, LB-service `realization_id` resolution,
+  and pool lookup by member ip+port (the Edge<->Policy id-mismatch workaround).
+- New automation `lb_troubleshoot/`: diagnoses an NSX-T native LB with a down
+  virtual server / off pool members. Resolves the three id namespaces (Policy,
+  realization/Edge, object path), classifies the Edge `health-check-table`
+  (`BACKEND_DOWN` / `MONITOR_MISMATCH` / `TIMEOUT_FILTER`), root-causes a member,
+  and can PATCH the pool monitor (guarded by an explicit confirmation). Ships an
+  API-error / FAIL_REASON decoder. Built from a real incident (HTTP monitor
+  probing an HTTPS/SSL backend). Fan-out safe: `--manager` falls back to the
+  jump's central `inventory/managers.conf`, credentials come from the
+  environment or a saved session (never prompts without a TTY), `--edge` uses
+  the registered `ADMIN_KEY`, and `--fix-monitor` requires `--yes` when
+  non-interactive — so one `run_across_datacenters.sh --only-dc <DC>` command
+  troubleshoots an LB in any datacenter from the orchestrator.
 - **`notify.conf` — central per-VM notification config**: `[slack] webhook`
   plus `[notify]` policy per automation (`errors`/`none`, `default` key,
   automation folder name as key; bin/ tools report as `orchestrator`).

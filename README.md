@@ -34,7 +34,8 @@ nsx-automations/
 ├── lib/
 │   ├── common.sh           # log, deps, sshpass, IPs, TCP probe, crontab, parsers
 │   ├── nsx_edge.sh         # root SSH toggle, support bundle, retry-on-auth helper
-│   └── nsx_manager.sh      # multi-cluster parser, reboot+wait, key registration
+│   ├── nsx_manager.sh      # multi-cluster parser, reboot+wait, key registration
+│   └── nsx_api.sh          # Policy/Manager REST: safe-auth curl, pagination, id resolve
 │
 ├── bin/
 │   ├── deploy.sh                       # copy lib/ + bin/ + automations/ to a target host (or --all-dcs)
@@ -48,6 +49,7 @@ nsx-automations/
 ├── automations/
 │   ├── edge_support_bundle/        # SB workflow (main + precheck + interactive CLI)
 │   ├── kb404700_disk_validation/   # detect root partition/overlay2 issues
+│   ├── lb_troubleshoot/            # native LB virtual-server/pool DOWN: diagnose + fix
 │   └── manager_rolling_reboot/     # multi-cluster monthly reboot
 │
 ├── docs/
@@ -79,6 +81,7 @@ nsx-automations/
 | `device_command` | Managers + Edges | Run any read-only NSX CLI command on every device of the DC (table + CSV) |
 | `edge_support_bundle` | Edges | Collect & verify NSX support bundles across all Edges |
 | `kb404700_disk_validation` | Edges | Check `/dev/sda2` + `overlay2` usage; flag nodes needing action |
+| `lb_troubleshoot` | Manager API + Edges | Diagnose a native LB VS/pool DOWN (id-namespace resolver, health-check classifier, guarded monitor fix) |
 | `manager_rolling_reboot` | Managers | Multi-cluster monthly rolling reboot (mitigates KB 396719) |
 
 ## Quick start
