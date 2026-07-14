@@ -108,18 +108,18 @@ Examples:
   # Full picture from the LB service id, with edge runtime + member root-cause
   bash lb_troubleshoot.sh --manager 192.168.20.10 \
     --lb-service b74d0f77-fe30-4a5e-809e-d711811b2c8a \
-    --edge 192.168.30.11 --member 10.10.1.11 --member-port 4010
+    --edge 192.168.30.11 --member 198.51.100.11 --member-port 4010
 
   # Apply the fix (HTTP-vs-HTTPS mismatch -> TCP monitor)
   bash lb_troubleshoot.sh --manager 192.168.20.10 \
     --lb-service b74d0f77-fe30-4a5e-809e-d711811b2c8a \
-    --member 10.10.1.11 --member-port 4010 \
+    --member 198.51.100.11 --member-port 4010 \
     --fix-monitor /infra/lb-monitor-profiles/default-tcp-lb-monitor
 
   # Same diagnosis, but launched FROM the orchestrator against DC-B:
   ./bin/run_across_datacenters.sh --conf ./datacenters.conf --only-dc DC-B \
     --automation lb_troubleshoot/lb_troubleshoot.sh -- \
-    --vip 10.10.0.34 --port 4010 --member 10.10.1.11 --member-port 4010
+    --vip 203.0.113.34 --port 4010 --member 198.51.100.11 --member-port 4010
 EOF
   exit 0
 }

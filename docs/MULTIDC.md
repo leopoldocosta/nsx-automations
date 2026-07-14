@@ -207,7 +207,7 @@ Full automations across DCs:
    --conf ./datacenters.conf \
    --only-dc DC-B \
    --automation lb_troubleshoot/lb_troubleshoot.sh -- \
-   --vip 10.10.0.34 --port 4010 --member 10.10.1.11 --member-port 4010
+   --vip 203.0.113.34 --port 4010 --member 198.51.100.11 --member-port 4010
 ```
 
 ### Keeping every jump in sync with main
