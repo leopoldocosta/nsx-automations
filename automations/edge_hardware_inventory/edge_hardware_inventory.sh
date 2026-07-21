@@ -251,8 +251,26 @@ print_report(){
 # ---------------------------------------------------------------------------
 main(){
   load_ips
-  ask_admin_creds
-  ask_root_creds
+
+  # Credentials vs. keys.
+  # ssh_admin / ssh_root use the registered key when its file exists
+  # (ADMIN_KEY / ROOT_KEY) and only fall back to a password otherwise. Mirror
+  # that same decision here so the up-front prompts are skipped exactly when
+  # the SSH itself won't need a password. This lets the automation run
+  # non-interactively under bin/run_across_datacenters.sh (bash -lc over SSH,
+  # no controlling terminal — the /dev/tty read in ask_*_creds would abort the
+  # run) whenever the jump holds the admin/root keys, while a workstation with
+  # neither key still gets the interactive prompt.
+  if [[ -f "${ADMIN_KEY}" ]]; then
+    log "Admin key present (${ADMIN_KEY}) — password prompt skipped (key auth)."
+  else
+    ask_admin_creds
+  fi
+  if [[ -f "${ROOT_KEY}" ]]; then
+    log "Root key present (${ROOT_KEY}) — password prompt skipped (key auth)."
+  else
+    ask_root_creds
+  fi
 
   REPORT_FILE="${LOG_DIR}/edge_hw_report_$(date '+%Y%m%d_%H%M%S').txt"
   CSV_FILE="${LOG_DIR}/edge_hw_report_$(date '+%Y%m%d_%H%M%S').csv"
