@@ -51,6 +51,46 @@ Notes:
   The Slack notifications (`[NSX][<hostname>] ERR:`) are useless until this
   is fixed.
 
+### Threat model — you cannot wall `netops` off from a local `root` (don't try)
+
+`root` is the security boundary on the jump, not `netops`. Every lock root
+sets, root removes. Recurring operator questions and why the "obvious" fixes
+are theater — documented here so nobody re-derives (and re-tries) them:
+
+- **"Make `su - netops` prompt for a password, even from root."** What frees
+  root is `auth sufficient pam_rootok.so` in `/etc/pam.d/su`; comment it out
+  and root does get prompted — but it stops nobody: `sudo -u netops -s`,
+  `runuser -u netops -- bash`, a 3-line `os.setuid()` in python, or just
+  re-editing the PAM file all bypass it. **Skip it.**
+- **"Stop root changing netops's password without knowing the old one."**
+  `passwd netops` as root never needs the old password. `chattr +i
+  /etc/shadow` blocks even `passwd` — until root runs `chattr -i` first, and
+  it breaks legitimate password management. **Not a real control.**
+- **"Prevent cracking netops's password."** Offline (root already holds the
+  `/etc/shadow` hash) you cannot prevent, only slow it down (yescrypt/sha512 +
+  long random pw). The real answer is step 2 above — `passwd -l netops` → there
+  is NO password to crack, key-only login. The thing you actually block is
+  ONLINE brute force: `pam_faillock` (lockout after N failures) + `fail2ban`
+  on sshd.
+
+What DOES matter is **controlling who becomes root** and **making root
+accountable** — prevention against a root that is already present is
+impossible; detection and blast-radius are not:
+
+- No shared root: `PermitRootLogin no`, per-person named accounts, elevation
+  via a TIGHT sudoers that explicitly denies `sudo su`, `sudo -i`,
+  `sudo -u netops`, `sudo passwd`. No root password handed around.
+- `auditd` logging `su`/`sudo`/`execve`, **shipped OFF the jump** (remote
+  syslog). A compromised root scrubs local logs, not what already left the box.
+- The crown jewels on a jump are netops's **NSX SSH keys** — a root reads them
+  directly (`cat /home/netops/.ssh/id_rsa`), no `su` needed. So the real
+  blast-radius control is the least-privilege NSX user (items 5 + 1) plus a
+  passphrase on the device key (ssh-agent on the orchestrator). Harden the
+  keys' PRIVILEGES, not the path to `netops`.
+- Genuinely constraining a local root needs MAC (SELinux confined root, see
+  the `user_u` note above) with a locked bootloader / Secure Boot / kernel
+  lockdown — high effort, rarely worth it for a jump host. Noted, not planned.
+
 ## 1. NSX least-privilege user migration — credential cleanup (PENDING)
 
 When the NSX-side user is switched from `admin` to a more restricted one
