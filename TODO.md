@@ -204,6 +204,19 @@ Plan:
   (or re-prompt on "% Invalid current password") instead of assuming one
   fleet-wide root password.
 
+Field finding 2026-07-21 (DC-A edge_hardware_inventory run): admin key auth
+works on all 8 DC-A edges (version/uptime collected), but the **root** key is
+registered on only 4. The 4 pending edges are:
+
+```text
+xyz214.36.102   xyz214.36.103   xyz214.36.104   xyz214.36.105
+```
+
+On these, `dmidecode`/`lscpu` collection returns `Root SSH failed` and the node
+is reported `ERROR` / CPU `N/A` (admin data still lands). Register the root key
+there to close them — with the `--users root` flag above this becomes a
+targeted rerun over just these four instead of re-touching all eight.
+
 ## 8. Slack webhook: error notifications from every jump (PENDING)
 
 Wire `NSX_NOTIFY_WEBHOOK` fleet-wide so every `log_err` from any automation

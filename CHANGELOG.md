@@ -8,6 +8,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`edge_hardware_inventory` now also inventories the CPU.** `lscpu` and
+  `dmidecode -t processor` are collected in the SAME root round-trip that
+  already reads the Dell chassis fields — no extra SSH connection. The report
+  gains a CPU table (model, sockets, cores/socket, threads/core, total vCPU,
+  max clock) and a "CPU models across fleet" grouping to spot heterogeneous
+  hardware; the CSV gains `cpu_model,sockets,cores_per_socket,threads_per_core,
+  total_vcpu,max_mhz,dmi_max_speed`; a per-node `edge_cpu_raw_<host>.txt` dump
+  is written. The hardware verdict is unchanged (CPU data is supplementary).
+  Supersedes the never-committed standalone `edge_cpu_inventory` (folded in to
+  avoid two near-identical edge automations).
 - New library `lib/nsx_api.sh`: NSX Manager/Policy REST helpers — safe Basic-Auth
   curl (credentials never reach `ps`; any special character accepted via raw
   base64), GET/PATCH, cursor pagination, LB-service `realization_id` resolution,
@@ -141,6 +151,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 - `bin/deploy.sh` no longer uses `eval`; commands run via argv array.
 
 ### Fixed
+- **`ADMIN_KEY`/`ROOT_KEY` never pointed at the registered device key.** They
+  defaulted to a per-automation path (`${KEY_DIR}/nsx_*_key`) that nothing ever
+  populated, so `ssh_admin`/`ssh_root` always fell back to the password path —
+  which dies under the non-interactive fan-out (no `/dev/tty`). This was the
+  root cause of the fleet-wide "ADMIN_KEY not found" / edge-inventory failures.
+  They now resolve to the first key that exists (explicit env → `NSX_DEVICE_KEY`
+  → legacy per-automation key → `~/.ssh/id_rsa`, the key `configure_ssh_keys.sh`
+  registers by default; field-confirmed authenticating as admin to the edges).
+- **`confirm_clear_creds_with_timeout` failed the run when there was no tty.**
+  It wrote to `/dev/tty` before any guard; under the fan-out (`ssh bash -lc`,
+  no `-t`) that write fails and, with `set -e`, aborted the automation with
+  exit 1 *after* the report was written — so a DC that completed successfully
+  was reported FAILED in `summary.csv`. It now detects the missing terminal,
+  clears credentials silently and returns 0. Interactive runs still prompt.
+- **`edge_hardware_inventory` prompted for passwords even with keys present.**
+  `main()` always called `ask_admin_creds`/`ask_root_creds` (which read
+  `/dev/tty`), blocking the fan-out. It now mirrors the `ssh_admin`/`ssh_root`
+  key-vs-password decision and skips the prompt when the device key exists.
 - **`reboot_manager_and_wait` never actually rebooted the manager.** The NSX
   CLI `reboot` command asks `Are you sure you want to reboot (yes/no)` even
   on a non-TTY SSH session, but shows no prompt — the session blocked until
