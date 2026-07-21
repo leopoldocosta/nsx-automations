@@ -62,8 +62,26 @@ HOST_FILE="${HOST_FILE:-${AUTO_DIR}/hosts.txt}"
 HOST_FILE="$(resolve_inventory_file "${HOST_FILE}")"
 HOST_EXAMPLE="${HOST_EXAMPLE:-${AUTO_DIR}/hosts.example}"
 
-ADMIN_KEY="${ADMIN_KEY:-${KEY_DIR}/nsx_admin_key}"
-ROOT_KEY="${ROOT_KEY:-${KEY_DIR}/nsx_root_key}"
+# NSX device SSH key (jump -> NSX manager/edge).
+#
+# ssh_admin/ssh_root use ADMIN_KEY/ROOT_KEY when the file exists, else fall
+# back to a password. The old defaults pointed at a per-automation path
+# (${KEY_DIR}/nsx_*_key) that nothing ever populated, so every run silently
+# took the password path — which dies under the non-interactive fan-out (no
+# /dev/tty) and produced the "ADMIN_KEY not found" failures on the fleet.
+#
+# configure_ssh_keys.sh registers ~/.ssh/id_rsa by default (MANUAL.md; field-
+# confirmed 2026-07-21: id_rsa authenticates as admin to the edges). Resolve
+# to the first key that actually exists, most specific first:
+#   1. explicit ADMIN_KEY/ROOT_KEY already in the environment
+#   2. NSX_DEVICE_KEY override (one knob for both hops, e.g. a non-default --key)
+#   3. the legacy per-automation ${KEY_DIR}/nsx_*_key
+#   4. the documented default ~/.ssh/id_rsa
+# If none exist the value stays empty and the interactive password path still
+# applies for local, TTY-backed runs.
+_first_existing_file(){ local f; for f in "$@"; do [[ -n "${f}" && -f "${f}" ]] && { printf '%s' "${f}"; return 0; }; done; return 0; }
+ADMIN_KEY="${ADMIN_KEY:-$(_first_existing_file "${NSX_DEVICE_KEY:-}" "${KEY_DIR}/nsx_admin_key" "${HOME}/.ssh/id_rsa")}"
+ROOT_KEY="${ROOT_KEY:-$(_first_existing_file "${NSX_DEVICE_KEY:-}" "${KEY_DIR}/nsx_root_key" "${HOME}/.ssh/id_rsa")}"
 
 mkdir -p "${LOG_DIR}" "${RUN_DIR}" "${KEY_DIR}"
 
