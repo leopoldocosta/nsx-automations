@@ -279,15 +279,15 @@ print_report(){
     printf '  CPU INVENTORY (lscpu)\n'
     echo "${sep}"
     echo ""
-    printf '  %-4s  %-20s  %-16s  %-34s  %-4s  %-6s  %-6s  %-6s  %s\n' \
+    printf '  %-4s  %-20s  %-16s  %-42s  %-4s  %-6s  %-6s  %-6s  %s\n' \
       "#" "Hostname" "IP" "CPU Model" "Sock" "Cor/So" "Thr/Co" "vCPU" "Max MHz"
-    printf '  %-4s  %-20s  %-16s  %-34s  %-4s  %-6s  %-6s  %-6s  %s\n' \
+    printf '  %-4s  %-20s  %-16s  %-42s  %-4s  %-6s  %-6s  %-6s  %s\n' \
       "----" "--------------------" "----------------" \
-      "----------------------------------" "----" "------" "------" "------" \
+      "------------------------------------------" "----" "------" "------" "------" \
       "-------"
     local cidx=1 cip
     for cip in "${HOST_IPS[@]}"; do
-      printf '  %-4s  %-20s  %-16s  %-34s  %-4s  %-6s  %-6s  %-6s  %s\n' \
+      printf '  %-4s  %-20s  %-16s  %-42s  %-4s  %-6s  %-6s  %-6s  %s\n' \
         "${cidx}." \
         "${NODE_HOSTNAME[${cip}]:-N/A}" \
         "${cip}" \

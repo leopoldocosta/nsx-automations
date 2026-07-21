@@ -372,6 +372,16 @@ clear_creds(){
 confirm_clear_creds_with_timeout(){
   local timeout="${1:-30}"
   local answer
+  # No controlling terminal (e.g. the multi-DC fan-out runs the automation via
+  # `ssh ... bash -lc` with no -t) — /dev/tty cannot be opened. Writing to it
+  # fails, and under `set -e` that aborts the whole run with exit 1 AFTER all
+  # the real work is done, so a completed DC gets reported as FAILED. Detect
+  # the missing tty, clear credentials silently and return cleanly.
+  if ! { : >/dev/tty; } 2>/dev/null; then
+    log "No terminal (non-interactive run) — clearing credentials automatically."
+    clear_creds
+    return 0
+  fi
   printf '\n' >/dev/tty
   if IFS= read -r -t "${timeout}" -p "Clear credentials from environment? [Y/n] (auto-yes in ${timeout}s): " answer </dev/tty; then
     printf '\n' >/dev/tty
