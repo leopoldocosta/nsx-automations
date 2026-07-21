@@ -1,17 +1,22 @@
-# Edge Hardware Inventory — Dell PowerEdge (Edge Nodes)
+# Edge Hardware + CPU Inventory (Edge Nodes)
 
-Collects **chassis model** and **Service Tag** for each bare-metal NSX-T Edge
-Node in the fleet, by running `dmidecode` over root SSH and parsing the
-`system-product-name` / `system-serial-number` fields.
+Collects, for each bare-metal NSX-T Edge Node, in a single root-SSH pass:
+
+- **Chassis model** and **Service Tag** (Dell PowerEdge) via `dmidecode`;
+- **CPU identity / topology** (model, sockets, cores/socket, threads/core,
+  total vCPU, max clock) via `lscpu` + `dmidecode -t processor`.
 
 ## Why
 
 NSX-T Edge Nodes deployed as bare-metal usually run on Dell PowerEdge servers.
-Inventory, warranty checks and field replacements need the **Service Tag** of
-each host — this script collects it across the fleet in one pass, with no
-out-of-band BMC required.
+Inventory, warranty checks and field replacements need the **Service Tag**;
+capacity and heterogeneity reviews need the **CPU model**. This script collects
+both across the fleet in one pass, with no out-of-band BMC required.
 
 ## Verdict logic
+
+The verdict is **hardware-based** (the CPU columns are supplementary data and
+never change it):
 
 | Condition | Verdict |
 |---|---|
@@ -20,48 +25,61 @@ out-of-band BMC required.
 | Dell hardware but service tag empty / placeholder (`Not Specified`, `To Be Filled By O.E.M.`) | **MISSING_TAG** |
 | SSH or `dmidecode` failed | **ERROR** |
 
-## Setup
+## Inventory
 
-```bash
-cd automations/edge_hardware_inventory
-cp edge_nodes.example edge_nodes.txt
-vim edge_nodes.txt
-```
-
-No SSH key registration is needed — the script prompts for `admin` and `root`
-passwords once and reuses them for all nodes.
-
-(Optional, to avoid passwords next time:)
-
-```bash
-../../bin/configure_ssh_keys.sh --type edge --hosts ./edge_nodes.txt
-```
+The list of Edge Nodes is resolved by `resolve_inventory_file()` in
+`lib/common.sh`: a local `edge_nodes.txt` in this folder wins, otherwise it
+falls back to the **central inventory** (`inventory/edge_nodes.txt` or
+`$NSX_INVENTORY_DIR/edge_nodes.txt`) that each jump already maintains. No
+per-automation host file to copy or edit.
 
 ## Run
+
+### Across every datacenter (from the orchestrator) — the normal way
+
+```bash
+./bin/run_across_datacenters.sh --conf ./datacenters.conf \
+  --automation edge_hardware_inventory/edge_hardware_inventory.sh
+```
+
+The orchestrator SSHes into each jump and runs the automation **there**, where
+the jump can reach its own edges and reads its own inventory. Reports are pulled
+back to `aggregated_logs/<timestamp>/<DC>/logs/`.
+
+### On a single jump (interactive)
 
 ```bash
 bash edge_hardware_inventory.sh
 ```
 
-The script:
-1. Asks for `admin` and `root` passwords.
-2. For each node: collects `uptime`, `version`, enables root SSH, runs
-   `dmidecode` to read manufacturer / model / service tag, disables root SSH.
-3. Prints a consolidated table and saves both a `.txt` report and a `.csv`
-   side-output to `logs/`.
-4. Asks whether to clear credentials (default: Yes after 30s).
+### Credentials vs. keys
+
+`ssh_admin`/`ssh_root` use the registered device key when it exists
+(`ADMIN_KEY`/`ROOT_KEY`, resolved by default to `~/.ssh/id_rsa` — see
+`lib/common.sh`). When the key is present the admin/root **password prompts are
+skipped**, so the automation runs unattended under the fan-out. Only when no key
+is present does it fall back to prompting once (interactive, TTY-backed runs).
+
+> Note: on edges where the **root** key was never registered, root collection
+> fails cleanly and the node is reported `ERROR`/`MISSING_TAG` (no hang) — the
+> admin data (version, uptime) still lands. Register the root key with
+> `../../bin/configure_ssh_keys.sh --type edge` to close those.
 
 ## Output
 
 - `logs/edge_hw_run_YYYYMMDD_HHMMSS.log`     — full execution log
-- `logs/edge_hw_report_YYYYMMDD_HHMMSS.txt`  — final human-readable report
+- `logs/edge_hw_report_YYYYMMDD_HHMMSS.txt`  — human-readable report:
+  hardware table, CPU table, CPU-model grouping, and nodes needing attention
 - `logs/edge_hw_report_YYYYMMDD_HHMMSS.csv`  — machine-readable inventory:
-  `ip,hostname,nsx_version,manufacturer,model,service_tag,baseboard_serial,verdict,error`
+  `ip,hostname,nsx_version,manufacturer,model,service_tag,baseboard_serial,cpu_model,sockets,cores_per_socket,threads_per_core,total_vcpu,max_mhz,dmi_max_speed,verdict,error`
+- `logs/edge_cpu_raw_<hostname>.txt`          — per-node full `lscpu` +
+  grepped `dmidecode -t processor` dump, for reference / debugging
 
 ## Tunables
 
 | Var | Default | Effect |
 |---|---|---|
+| `NSX_DEVICE_KEY` | _(unset)_ | Override the jump→NSX key for both hops (else `ADMIN_KEY`/`ROOT_KEY` → `~/.ssh/id_rsa`) |
 | `NSX_LOG_RETENTION_DAYS` | `30` | Days of `logs/` kept after each run |
 | `NSX_DEBUG` | _(unset)_ | `1` surfaces SSH stderr (auth/host-key troubleshooting) |
 | `NSX_NOTIFY_WEBHOOK` | _(unset)_ | Slack/Teams URL — each `log_err` is posted |
@@ -71,10 +89,10 @@ The script:
 - Each Edge Node must allow root SSH from the jump host while the script runs
   (the script toggles it on/off via the admin CLI — same pattern as the other
   edge automations).
-- `dmidecode` must be installed on the Edge (default on NSX Edge OS).
-- For VM edges, expect `NOT_DELL` verdicts — `dmidecode` returns the
-  hypervisor identity (`VMware, Inc.`), not the underlying ESXi host. To
-  inventory the ESXi host's PowerEdge tag instead, query vCenter / iDRAC.
+- `dmidecode` and `lscpu` must be installed on the Edge (default on NSX Edge OS).
+- For VM edges, expect `NOT_DELL` verdicts — `dmidecode` returns the hypervisor
+  identity (`VMware, Inc.`), not the underlying ESXi host. `lscpu` still reports
+  the CPU model exposed to the guest, so the CPU columns remain useful there.
 
 ## Dependencies
 
