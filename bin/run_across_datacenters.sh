@@ -282,4 +282,39 @@ log_banner "Multi-DC fan-out — done"
 log "Summary CSV: ${SUMMARY}"
 column -ts, "${SUMMARY}" 2>/dev/null || cat "${SUMMARY}"
 
+# ---------------------------------------------------------------------------
+# Unified fleet report — lift each DC's report block (delimited by the
+# NSX_REPORT_BEGIN/END sentinels from lib/common.sh) out of its run.log and
+# print them together, so the operator reads every DC at once instead of
+# cat-ing each log by hand. DCs whose automation emits no report block (e.g.
+# rolling reboot) are simply noted; if no DC emitted one, this is skipped.
+# ---------------------------------------------------------------------------
+UNIFIED="${OUT_BASE}/unified_report.txt"
+have_report=false
+for idx in "${TARGETS[@]}"; do
+  if grep -qF "${NSX_REPORT_BEGIN}" "${OUT_BASE}/${DC_LABELS[$idx]}/run.log" 2>/dev/null; then
+    have_report=true; break
+  fi
+done
+
+if "${have_report}"; then
+  {
+    printf '\n%s\n' "$(printf '#%.0s' {1..72})"
+    printf '#  Unified report — %s datacenter(s)   %s\n' "${#TARGETS[@]}" "$(date '+%F %T')"
+    printf '%s\n' "$(printf '#%.0s' {1..72})"
+    for idx in "${TARGETS[@]}"; do
+      label="${DC_LABELS[$idx]}"
+      rl="${OUT_BASE}/${label}/run.log"
+      printf '\n==================== %s ====================\n' "${label}"
+      if [[ -f "${rl}" ]] && grep -qF "${NSX_REPORT_BEGIN}" "${rl}"; then
+        awk -v b="${NSX_REPORT_BEGIN}" -v e="${NSX_REPORT_END}" '
+          index($0,b){f=1;next} index($0,e){f=0;next} f' "${rl}"
+      else
+        printf '  (no report block — automation emitted none; see %s)\n' "${rl}"
+      fi
+    done
+  } | tee "${UNIFIED}"
+  log "Unified report saved to: ${UNIFIED}"
+fi
+
 exit "${overall_rc}"

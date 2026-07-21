@@ -399,7 +399,9 @@ main(){
 
   (( ${#failed_nodes[@]} > 0 )) && log_warn "Nodes with errors: ${failed_nodes[*]}"
 
-  print_report
+  # Wrap the report in the aggregation sentinels so a multi-DC fan-out can lift
+  # just this block out of run.log into one unified fleet report.
+  report_wrap print_report
 
   log "=== Done ==="
   rotate_logs   # honor NSX_LOG_RETENTION_DAYS (default 30)

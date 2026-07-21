@@ -106,6 +106,30 @@ log_ok()   { printf '%s[%s] [OK]%s   %s\n'    "${C_GREEN}"   "$(date '+%F %T')" 
 log_warn() { printf '%s[%s] [WARN]%s %s\n'    "${C_YELLOW}"  "$(date '+%F %T')" "${C_RESET}" "$*"; }
 
 # ---------------------------------------------------------------------------
+# Multi-DC report aggregation sentinels
+#
+# An automation wraps its final human-readable report between these two marker
+# lines. bin/run_across_datacenters.sh then lifts exactly that block out of each
+# DC's run.log and prints ONE unified fleet-wide report at the end of a fan-out,
+# so the operator reads every DC at once instead of cat-ing each log by hand.
+#
+# Kept free of regex metacharacters so the aggregator matches them with a plain
+# literal substring test (awk index()).
+# ---------------------------------------------------------------------------
+: "${NSX_REPORT_BEGIN:====== NSX-REPORT-BEGIN =====}"
+: "${NSX_REPORT_END:====== NSX-REPORT-END =====}"
+
+# report_wrap <cmd...> — run a report-printing command with the sentinels
+# around it, e.g. `report_wrap print_report`. The sentinels are emitted to
+# stdout only (they land in the run.log the fan-out reads); they never touch
+# the report's own saved .txt file.
+report_wrap(){
+  printf '%s\n' "${NSX_REPORT_BEGIN}"
+  "$@"
+  printf '%s\n' "${NSX_REPORT_END}"
+}
+
+# ---------------------------------------------------------------------------
 # Slack/Teams notifications — central per-VM config (notify.conf)
 #
 # notify.conf at the repo root (git-ignored; copy from notify.conf.example,

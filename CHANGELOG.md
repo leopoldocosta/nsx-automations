@@ -8,6 +8,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Unified fleet report at the end of a multi-DC fan-out.** After the
+  `summary.csv` table, `bin/run_across_datacenters.sh` now lifts each DC's final
+  report out of its `run.log` and prints one combined report (saved to
+  `<out>/unified_report.txt`) — so the operator no longer has to `cat` every
+  DC's log by hand and wade through the per-node collection noise. Automations
+  opt in by wrapping their report with the new `report_wrap` helper /
+  `NSX_REPORT_BEGIN`/`NSX_REPORT_END` sentinels (`lib/common.sh`); the sentinels
+  go only to stdout/`run.log`, never into the saved report `.txt`. DCs whose
+  automation emits no report block are noted rather than breaking the run.
+  Wired into `edge_hardware_inventory` first.
 - **`edge_hardware_inventory` now also inventories the CPU.** `lscpu` and
   `dmidecode -t processor` are collected in the SAME root round-trip that
   already reads the Dell chassis fields — no extra SSH connection. The report
