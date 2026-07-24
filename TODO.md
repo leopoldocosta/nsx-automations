@@ -310,3 +310,31 @@ Plan (in preference order):
    ITS NSX only — same blast-radius model as the SSH keys), document in
    MULTIDC security table + the automation README, and align the RBAC
    role with item 5 (least-privilege user migration).
+
+## 10. Guided one-shot fleet bootstrap `bin/bootstrap_fleet.sh` (BACKLOG — low priority)
+
+Operator pain: standing up a new environment means creating the
+orchestrator→jump SSH trust **one jump at a time by hand** (`ssh-copy-id`
+per jump), then deploy, then registering NSX keys per DC. Collapse it into
+one guided, idempotent, re-runnable script that seeds everything from the
+only thing a human must type: the jump list in `datacenters.conf`. It
+prompts for passwords live and **stores nothing** (no password on disk/env).
+
+Stages (each idempotent, `--only-dc` aware, skippable):
+- **A. Orchestrator key** — `ssh-keygen` if `~/.ssh/orchestrator` is missing,
+  then `ssh-copy-id` the pubkey to each jump. This is the ONE hop that can't
+  be key-based yet, so it prompts for each jump's password once (typed into
+  ssh's own prompt). After A, every hop is key-only. **This stage is the new
+  code — it is the actual pain point.**
+- **B. Deploy** — `deploy.sh --all-dcs --conf datacenters.conf` (exists).
+- **C. Inventory (guided, optional)** — prompt for manager/edge IPs per DC and
+  write `inventory/managers.conf` + `inventory/edge_nodes.txt` on each jump,
+  so even the IPs aren't hand-edited. (Operator confirmed hand-editing the
+  inventory is acceptable, so C is optional — B/D work with hand-made files.)
+- **D. NSX keys** — `configure_ssh_keys_all_dcs.sh` (exists): registers the
+  jump key for admin + root, edges + managers, prompting admin/root per DC.
+
+Note: D and its cross-jump interactive walk already exist
+(`bin/configure_ssh_keys_all_dcs.sh`). Only A (+ the A→D wrapper, and C if
+wanted) is net-new. Deferred deliberately: the environment is already up and
+working, so this is a greenfield/rebuild convenience, not a current blocker.
