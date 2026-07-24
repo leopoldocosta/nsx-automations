@@ -20,6 +20,11 @@
 #                               to the NSX CLI, so both RSA and ed25519 work.
 #   --label <text>              Label used in `set user ... ssh-keys label ...`
 #                               (manager only). Default: netops-key
+#   --root                      Manager only: ALSO register the key for root
+#                               (enables root SSH, registers, verifies, disables
+#                               again). Needed by root-using manager automations
+#                               like apiuser_audit. Prompts for the root password
+#                               per cluster. Edge always registers admin + root.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,6 +36,7 @@ TYPE=""
 HOSTS_FILE=""
 SSH_PRIV="${HOME}/.ssh/id_rsa"
 KEY_LABEL="netops-key"
+REGISTER_ROOT=false
 
 usage(){ grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
@@ -40,6 +46,7 @@ while [[ $# -gt 0 ]]; do
     --hosts)   HOSTS_FILE="$2"; shift 2 ;;
     --key)     SSH_PRIV="$2"; shift 2 ;;
     --label)   KEY_LABEL="$2"; shift 2 ;;
+    --root)    REGISTER_ROOT=true; shift ;;
     -h|--help) usage ;;
     *) log_err "Unknown flag: $1"; exit 1 ;;
   esac
@@ -151,6 +158,8 @@ case "${TYPE}" in
 
     # Pre-scan: only prompt for credentials of clusters that actually need
     # registration. If the key already opens every host, no password is asked.
+    # With --root we always need credentials (root login is gated, so the root
+    # key cannot be cheaply pre-checked — registration is idempotent).
     declare -a NEED=()
     for (( i=0; i<CLUSTER_COUNT; i++ )); do
       cuser="$(cluster_admin_user "${i}")"
@@ -158,11 +167,12 @@ case "${TYPE}" in
       pending=false
       for ip in "${hosts[@]}"; do
         if _key_works "${cuser}" "${ip}"; then
-          log_ok "${ip}: key already works for ${cuser} — will skip."
+          log_ok "${ip}: admin key already works for ${cuser}."
         else
           pending=true
         fi
       done
+      "${REGISTER_ROOT}" && pending=true
       NEED[$i]="${pending}"
     done
 
@@ -178,15 +188,26 @@ case "${TYPE}" in
       read -r -a hosts <<<"$(cluster_hosts "${i}")"
       for ip in "${hosts[@]}"; do
         if _key_works "${cuser}" "${ip}"; then
-          log_ok "${ip}: key already works — skipping."
-          continue
+          log_ok "${ip}: admin key already works — skipping admin registration."
+        else
+          with_cluster_creds "${i}" register_manager_admin_key "${ip}" "${PUB_VAL}" "${KEY_LABEL}" "${PUB_TYPE}" || true
         fi
-        with_cluster_creds "${i}" register_manager_admin_key "${ip}" "${PUB_VAL}" "${KEY_LABEL}" "${PUB_TYPE}" || true
+        if "${REGISTER_ROOT}"; then
+          # Root login is gated (off by default), so we cannot cheaply pre-check
+          # the root key. register_manager_root_key is idempotent: it enables
+          # root SSH, registers (or detects an existing key), verifies a key-only
+          # root login, then disables root SSH again — leaving the manager as
+          # found (root key present, root login OFF).
+          with_cluster_creds "${i}" register_manager_root_key "${ip}" "${PUB_VAL}" "${KEY_LABEL}" "${PUB_TYPE}" || true
+        fi
       done
     done
 
     log_ok "Manager SSH-key configuration complete."
     log "Note: set ADMIN_KEY=${SSH_PRIV} in scripts that use ssh_admin."
+    if "${REGISTER_ROOT}"; then
+      log "Root key registered; automations that need root (e.g. apiuser_audit) toggle root SSH on/off per run."
+    fi
     ;;
 
   *)

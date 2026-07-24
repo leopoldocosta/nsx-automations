@@ -33,6 +33,17 @@ To act on the whole fleet, fan out — the jump runs the automation locally:
   `ADMIN_KEY`/`ROOT_KEY`, which resolve to `~/.ssh/id_rsa` on each jump (the key
   `configure_ssh_keys.sh` registered). `~/.ssh/orchestrator` is a *different*
   key, only for orchestrator→jump hops.
+- **Root on an NSX device needs two things: a registered root key AND root SSH
+  login enabled.** `ssh_root` authenticates with the `id_rsa` key — but
+  `configure_ssh_keys.sh` only registers it for `root` on **edges**; for
+  **managers** run `./bin/configure_ssh_keys.sh --type manager --root` once
+  (registers the root key). Missing that shows up as "root SSH failed" even when
+  root login is on. Then each automation must **enable root SSH, do the work,
+  disable it** (leave login OFF). Toggle verb (field-confirmed on Manager 4.1.2
+  and Edges): `admin_cmd 'set ssh root-login'` / `'clear ssh root-login'` —
+  `enable_manager_root_ssh`/`disable_manager_root_ssh` (`lib/nsx_manager.sh`),
+  `enable_root_ssh`/`disable_root_ssh` (`lib/nsx_edge.sh`). Key registration is
+  global (configure_ssh_keys + lib), never inside an automation.
 - **Jump service user is `netops`** — plain user, **no sudo** (keep it that way).
 - **Per-DC inventories.** Each jump owns its own `inventory/managers.conf` /
   `inventory/edge_nodes.txt`. There is no cross-DC list on the orchestrator.

@@ -21,6 +21,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   deep `auth.log*` scan and the NSX API audit-log scan (`userName="<acct>"`),
   selecting rotated/`.gz` files by mtime and streaming with `zcat -f` so the
   window can widen cheaply.
+- **Root-key registration for NSX Managers.** `configure_ssh_keys.sh --type
+  manager` gains a `--root` flag that also registers the `id_rsa` key for
+  `root` (enable root SSH → register → verify key-only root login → disable),
+  backed by `register_manager_root_key` and `enable_manager_root_ssh`/
+  `disable_manager_root_ssh` in `lib/nsx_manager.sh`. Previously only edges
+  registered a root key, so root-using **manager** automations failed with
+  "root SSH failed" despite root login being on. The manager key registrar was
+  refactored into a shared `_register_manager_ssh_key` core (admin auth,
+  target-user + confirmation-password parameterized) — the admin path is
+  unchanged. `apiuser_audit` now enables root SSH per manager, does its one root
+  round-trip, and disables it again (login left OFF); the `set`/`clear ssh
+  root-login` verb is field-confirmed on NSX Manager 4.1.2.
 - **Unified fleet report at the end of a multi-DC fan-out.** After the
   `summary.csv` table, `bin/run_across_datacenters.sh` now lifts each DC's final
   report out of its `run.log` and prints one combined report (saved to

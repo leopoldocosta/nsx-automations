@@ -35,15 +35,27 @@ NSX_SSH_PORT="${NSX_SSH_PORT:-22}"
 #   0 — key registered now OR already present (idempotent OK)
 #   1 — unexpected response from the NSX CLI
 # ---------------------------------------------------------------------------
-register_manager_admin_key(){
+# _register_manager_ssh_key <ip> <target_user> <confirm_pass> <pub_val> [label] [key_type]
+#   Generic manager key registrar. SSH auth is ALWAYS as ${NSX_USER:-admin} with
+#   NSX_PASS (the admin session). <target_user> is the account whose
+#   authorized_keys is updated ("admin" or "root"); <confirm_pass> is THAT
+#   user's current password, fed to the CLI `password` parameter (admin's own
+#   for an admin key, root's for a root key). Verification is a key-only login
+#   as <target_user> — for root that requires root SSH login to be enabled by
+#   the caller first (register_manager_root_key does this).
+#
+# Returns: 0 registered-or-already-present, 1 on unexpected/failed response.
+_register_manager_ssh_key(){
   local ip="$1"
-  local pub_val="$2"
-  local label="${3:-netops-key}"
-  local key_type="${4:-ssh-rsa}"
-  local user="${NSX_USER:-admin}"
+  local target_user="$2"
+  local confirm_pass="$3"
+  local pub_val="$4"
+  local label="${5:-netops-key}"
+  local key_type="${6:-ssh-rsa}"
+  local auth_user="${NSX_USER:-admin}"
   local result
 
-  log "${ip}: registering SSH key (label='${label}', user='${user}', type='${key_type}')..."
+  log "${ip}: registering SSH key for '${target_user}' (label='${label}', type='${key_type}', auth as '${auth_user}')..."
   # Same strategy as the edge registrar (field-hardened on 2 DCs):
   #   1. modern syntax WITH the inline `password` parameter — some builds
   #      silently DISCARD the change on a non-TTY session without it
@@ -58,50 +70,51 @@ register_manager_admin_key(){
     -o UserKnownHostsFile=/dev/null
     -o ConnectTimeout=10
     -o LogLevel=ERROR
-    "${user}@${ip}")
+    "${auth_user}@${ip}")
 
   # QUOTING: nsxcli tokenizes with Python shlex ("No closing quotation" is
   # its error) and does NOT process backslash escapes inside quotes — pick
-  # the quote character by the password's content instead; if the password
+  # the quote character by the confirmation password's content instead; if it
   # has BOTH quote chars, inline is impossible: use the stdin variant.
   local inline_ok=true q="" rc=0
-  if [[ "${NSX_PASS}" != *"'"* ]]; then q="'"
-  elif [[ "${NSX_PASS}" != *'"'* ]]; then q='"'
+  if [[ "${confirm_pass}" != *"'"* ]]; then q="'"
+  elif [[ "${confirm_pass}" != *'"'* ]]; then q='"'
   else inline_ok=false
   fi
 
   result=""
   if "${inline_ok}"; then
     result="$(_sshpass_safe NSX_PASS "${_to[@]}" "${_ssh_base[@]}" \
-      "set user ${user} ssh-keys label ${label} type ${key_type} value ${pub_val} password ${q}${NSX_PASS}${q}" \
+      "set user ${target_user} ssh-keys label ${label} type ${key_type} value ${pub_val} password ${q}${confirm_pass}${q}" \
       </dev/null 2>&1)" || rc=$?
 
     if (( rc == 255 )); then
-      log_err "${ip}: SSH as ${user} FAILED — wrong password or host unreachable (nothing was registered)."
+      log_err "${ip}: SSH as ${auth_user} FAILED — wrong password or host unreachable (nothing was registered)."
       log "  Inherited credentials from the shell? Clear them:  unset NSX_PASS NSX_USER ROOT_PASS"
       return 1
     fi
   fi
   if ! "${inline_ok}" || echo "${result}" | grep -qiE "command not found|syntax error|no closing quotation"; then
     result="$(_sshpass_safe NSX_PASS "${_to[@]}" "${_ssh_base[@]}" \
-      "set user ${user} ssh-keys label ${label} type ${key_type} value ${pub_val}" \
-      <<<"${NSX_PASS}" 2>&1 || true)"
+      "set user ${target_user} ssh-keys label ${label} type ${key_type} value ${pub_val}" \
+      <<<"${confirm_pass}" 2>&1 || true)"
   fi
 
   # Drop the noise the remote getpass fallback prints on a non-TTY session,
-  # and never let the password leak into terminal/logs via a CLI error echo.
+  # and never let either password leak into terminal/logs via a CLI error echo.
   result="$(echo "${result}" | grep -viE 'getpass|fallback_getpass|Password input may be echoed|Password \(required' || true)"
+  [[ -n "${confirm_pass:-}" ]] && result="${result//${confirm_pass}/***}"
   [[ -n "${NSX_PASS:-}" ]] && result="${result//${NSX_PASS}/***}"
 
   echo "  Return: ${result:-<empty>}"
   if echo "${result}" | grep -qiE "invalid current password"; then
-    log_err "${ip}: NSX rejected the ${user} password when confirming the change — check it and rerun."
+    log_err "${ip}: NSX rejected the ${target_user} password when confirming the change — check it and rerun."
     return 1
   fi
   if echo "${result}" | grep -qiE "already exists|duplicate"; then
-    log_ok "${ip}: key already registered (no-op)."
+    log_ok "${ip}: ${target_user} key already registered (no-op)."
   elif echo "${result}" | grep -qiE "${label}|success" || [[ -z "${result}" ]]; then
-    log_ok "${ip}: key registered."
+    log_ok "${ip}: ${target_user} key registered."
   else
     log_warn "${ip}: unexpected response — review output above."
     return 1
@@ -114,15 +127,67 @@ register_manager_admin_key(){
     sleep 2
     if ssh -i "${priv}" -o BatchMode=yes -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR \
-        "${user}@${ip}" "exit" </dev/null &>/dev/null; then
-      log_ok "${ip}: ${user} key VERIFIED (BatchMode login ok)."
+        "${target_user}@${ip}" "exit" </dev/null &>/dev/null; then
+      log_ok "${ip}: ${target_user} key VERIFIED (BatchMode login ok)."
     else
-      log_warn "${ip}: CLI accepted the key but a key-only login still fails — inspect with: ssh ${user}@${ip} then 'get user ${user} ssh-keys'"
-      log "  Stored value differs from your key? On the device: del user ${user} ssh-keys label ${label} — then rerun."
-      log "  Value matches? Check algorithm policy: ssh -v -i <key> ${user}@${ip} exit 2>&1 | grep -i 'no mutual'"
+      log_warn "${ip}: CLI accepted the key but a key-only login as ${target_user} still fails."
+      [[ "${target_user}" == "root" ]] && \
+        log "  Root SSH login must be ON for this check — is 'set ssh root-login' supported on this manager build?"
+      log "  Inspect: ssh ${auth_user}@${ip} then 'get user ${target_user} ssh-keys'"
+      log "  Value matches? Check algorithm policy: ssh -v -i <key> ${target_user}@${ip} exit 2>&1 | grep -i 'no mutual'"
       return 1
     fi
   fi
+}
+
+# register_manager_admin_key <ip> <pub_key_value> [label] [key_type]
+#   Registers the admin key (auth + confirmation both use the admin password).
+register_manager_admin_key(){
+  local ip="$1" pub_val="$2" label="${3:-netops-key}" key_type="${4:-ssh-rsa}"
+  _register_manager_ssh_key "${ip}" "${NSX_USER:-admin}" "${NSX_PASS:-}" \
+    "${pub_val}" "${label}" "${key_type}"
+}
+
+# register_manager_root_key <ip> <pub_key_value> [label] [key_type]
+#   Registers the ROOT key on a manager. SSH auth is still as admin
+#   (NSX_USER/NSX_PASS); the CLI confirmation uses ROOT_PASS. Root SSH login is
+#   enabled for the verification step and disabled again afterwards, so the
+#   device is left exactly as found (key registered, root login OFF).
+register_manager_root_key(){
+  local ip="$1" pub_val="$2" label="${3:-netops-key}" key_type="${4:-ssh-rsa}"
+  local rc
+  enable_manager_root_ssh "${ip}"
+  sleep 2
+  _register_manager_ssh_key "${ip}" root "${ROOT_PASS:-}" \
+    "${pub_val}" "${label}" "${key_type}"
+  rc=$?
+  disable_manager_root_ssh "${ip}"
+  return "${rc}"
+}
+
+# ---------------------------------------------------------------------------
+# Root SSH toggling on Managers (admin CLI).
+#
+# FIELD-CONFIRMED on NSX Manager 4.1.2: the same `set ssh root-login` /
+# `clear ssh root-login` verb the Edge helpers use also works on managers
+# (`clear` was observed disabling root login — a subsequent `ssh root@` gave
+# "Permission denied"). The NSX-T CLI is unified here. Kept as manager-named
+# helpers so the manager path owns its toggle (one place to change if a future
+# build ever diverges). Both are best-effort (|| true) so a toggle failure never
+# aborts the caller; the subsequent root login attempt is the real gate.
+# ---------------------------------------------------------------------------
+enable_manager_root_ssh(){
+  local ip="$1"
+  log "${ip}: enabling root SSH (manager)..."
+  admin_cmd "$ip" 'set ssh root-login' 2>/dev/null || true
+  log "${ip}: [set ssh root-login] done"
+}
+
+disable_manager_root_ssh(){
+  local ip="$1"
+  log "${ip}: disabling root SSH (manager)..."
+  admin_cmd "$ip" 'clear ssh root-login' 2>/dev/null || true
+  log "${ip}: [clear ssh root-login] done"
 }
 
 # ---------------------------------------------------------------------------

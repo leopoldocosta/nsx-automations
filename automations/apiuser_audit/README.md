@@ -64,12 +64,27 @@ Manager IPs are resolved by `resolve_inventory_file()`: a local
 `inventory/managers.conf` (same file the rolling-reboot uses). Every cluster's
 hosts are flattened and audited; the cluster label is shown per row.
 
-## Access
+## Access — one-time setup (root key on managers)
 
-Runs as **root** on each manager via `ssh_root` — `ROOT_KEY` (`~/.ssh/id_rsa`)
-when present, otherwise `ROOT_PASS` from the environment (or an interactive
-prompt on a TTY-backed local run). Under the non-interactive fan-out there is no
-`/dev/tty`, so provide root by key or `ROOT_PASS`.
+Runs as **root** on each manager via `ssh_root`, which authenticates with the
+`id_rsa` key. That key is registered for `admin` on managers, but **not for
+`root`** — only edges register a root key. So before the first run, register the
+root key on the managers **once**, from a jump:
+
+```bash
+./bin/configure_ssh_keys.sh --type manager --root
+```
+
+This enables root SSH, registers `id_rsa` for root, verifies a key-only root
+login, and disables root SSH again (leaving login OFF). Skipping it makes every
+manager report `ERROR: root SSH failed`.
+
+At **run time**, `apiuser_audit` itself handles the toggle: for each manager it
+enables root SSH (as the cluster's admin user, via the admin key), does one root
+round-trip, then disables root SSH immediately — so root login is left OFF even
+if parsing fails. The toggle verb (`set`/`clear ssh root-login`) is
+field-confirmed on NSX Manager 4.1.2. No passwords or `/dev/tty` needed, so it
+runs cleanly under the non-interactive fan-out.
 
 ## Run
 

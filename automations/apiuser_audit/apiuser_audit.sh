@@ -108,7 +108,7 @@ SINCE_HUMAN="$(date -d "@${SINCE_EPOCH}" '+%F %T')"
 # ---------------------------------------------------------------------------
 # Per-manager result arrays (keyed by IP)
 # ---------------------------------------------------------------------------
-declare -A M_CLUSTER M_EXISTS M_SHELL M_UID M_HOME
+declare -A M_CLUSTER M_ADMIN_USER M_EXISTS M_SHELL M_UID M_HOME
 declare -A M_LOCK M_PRIV M_PRIV_WHY
 declare -A M_LASTLOGIN M_LASTSRC
 declare -A M_SESS_CNT M_SESS_SRCS M_FAIL_CNT
@@ -123,12 +123,15 @@ MGR_IPS=()
 load_managers(){
   parse_managers_conf "${MANAGERS_CONF}"
   local i ip
+  local user
   for (( i=0; i<CLUSTER_COUNT; i++ )); do
+    user="$(cluster_admin_user "${i}")"
     # shellcheck disable=SC2178
     local -n _hv="CLUSTER_HOSTS_${i}"
     for ip in "${_hv[@]}"; do
       MGR_IPS+=("${ip}")
       M_CLUSTER["${ip}"]="${CLUSTER_LABELS[$i]}"
+      M_ADMIN_USER["${ip}"]="${user}"
     done
     unset -n _hv
   done
@@ -171,6 +174,15 @@ collect_manager(){
 
   log "${ip}: probing account '${ACCOUNT}' via root..."
 
+  # Root SSH login is OFF by default on managers. Enable it (as the cluster's
+  # admin user, via the admin key), do the ONE root round-trip, then disable it
+  # again immediately — so root SSH is left OFF even if the parse below fails.
+  # Auth for the root round-trip is the id_rsa key registered by
+  # `configure_ssh_keys.sh --type manager --root` (NOT this script's job).
+  export NSX_USER="${M_ADMIN_USER[${ip}]:-admin}"
+  enable_manager_root_ssh "${ip}"
+  sleep 2
+
   # Single round-trip, marker-delimited so we split locally (same idiom as
   # edge_hardware_inventory). The account name is allowlist-validated above.
   local raw
@@ -185,6 +197,8 @@ collect_manager(){
     echo "----LASTB----";    last -F -w -f /var/log/btmp "$acct" 2>/dev/null | head -n 500 || true
     echo "----END----"
   ' 2>/dev/null || true)"
+
+  disable_manager_root_ssh "${ip}"
 
   if [[ -z "${raw}" ]] || ! grep -q '^----END----$' <<<"${raw}"; then
     M_ERROR["${ip}"]="root SSH failed or probe returned nothing."
@@ -406,7 +420,11 @@ main(){
     log "--- ${ip} [${M_CLUSTER[${ip}]:-?}] ---"
     collect_manager "${ip}" || failed+=("${ip}")
   done
-  (( ${#failed[@]} > 0 )) && log_warn "Managers with probe errors: ${failed[*]}"
+  if (( ${#failed[@]} > 0 )); then
+    log_warn "Managers with probe errors: ${failed[*]}"
+    log_warn "If it is 'root SSH failed', the root key is likely not registered on the managers."
+    log_warn "Run once, from a jump:  ./bin/configure_ssh_keys.sh --type manager --root"
+  fi
 
   # Wrap in the aggregation sentinels so a multi-DC fan-out lifts this one
   # report block out of run.log into the unified fleet report.
