@@ -12,6 +12,44 @@ cd automations/<your_automation_name>
 - **Edge automation** → source `lib/common.sh` + `lib/nsx_edge.sh`
 - **Manager automation** → source `lib/common.sh` + `lib/nsx_manager.sh`
 
+## The fan-out contract (read this before writing a line)
+
+Automations are **fanned out** from the orchestrator: `bin/run_across_datacenters.sh`
+runs each one on a jump VM via `ssh … bash -lc`, which has **no controlling
+terminal**. Two rules follow, and breaking either one has bitten the fleet:
+
+1. **Never read `/dev/tty` on the fan-out path.** Any interactive prompt
+   (`ask_admin_creds`, `ask_root_creds`, `read -p`) blocks forever under the
+   fan-out. Guard every prompt so it is **skipped when a key is present** and
+   **only runs on a real TTY**. Device auth normally comes from the registered
+   key (`ADMIN_KEY`/`ROOT_KEY` → `~/.ssh/id_rsa`), so the prompt should be the
+   exception, not the default:
+
+   ```bash
+   if [[ -f "${ADMIN_KEY}" ]]; then
+     log "Admin key present — password prompt skipped (key auth)."
+   elif [[ -t 0 ]]; then
+     ask_admin_creds          # local, TTY-backed run only
+   else
+     log_warn "No key and no TTY — relying on NSX_PASS from the environment."
+   fi
+   ```
+
+2. **Opt into the unified report** if your automation prints a final report.
+   Wrap the report-printing call in `report_wrap` so the fan-out can lift that
+   one block out of each DC's `run.log` into a single fleet-wide report:
+
+   ```bash
+   report_wrap print_report   # instead of a bare `print_report`
+   ```
+
+   The `NSX_REPORT_BEGIN`/`NSX_REPORT_END` sentinels go only to stdout/`run.log`,
+   never into the report's own saved `.txt`. Automations that emit no report
+   are simply noted in the unified output — nothing breaks.
+
+`edge_hardware_inventory` and `apiuser_audit` are the reference implementations
+of both rules.
+
 ## Step 3 — Host list
 
 **You usually don't need one.** Automations read the central per-DC inventory
@@ -46,12 +84,24 @@ source "${REPO_ROOT}/lib/<nsx_edge|nsx_manager>.sh"
 
 need_cmd ssh
 load_ips
-[[ -f "${ADMIN_KEY}" ]] || ask_admin_creds
 
-for ip in "${HOST_IPS[@]}"; do
-  admin_cmd "$ip" "get version"
-done
+# Fan-out-safe auth: use the key when present; only prompt on a real TTY
+# (see "The fan-out contract" above).
+if [[ -f "${ADMIN_KEY}" ]]; then
+  log "Admin key present — password prompt skipped (key auth)."
+elif [[ -t 0 ]]; then
+  ask_admin_creds
+else
+  log_warn "No key and no TTY — relying on NSX_PASS from the environment."
+fi
 
+print_report(){
+  for ip in "${HOST_IPS[@]}"; do
+    admin_cmd "$ip" "get version"
+  done
+}
+
+report_wrap print_report   # opt into the unified fleet report
 clear_creds
 ```
 
@@ -66,6 +116,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full list. Highlights:
 - `ssh_admin_retry <ip> <cmd> [retries] [base]` — linear-backoff wrapper for read-only commands
 - `tcp_check`
 - `log`/`log_ok`/`log_warn`/`log_err`/`log_banner` (log_err honors `NSX_NOTIFY_WEBHOOK`)
+- `report_wrap <cmd...>` — run a report-printing command wrapped in the
+  `NSX_REPORT_BEGIN`/`NSX_REPORT_END` sentinels so the multi-DC fan-out lifts it
+  into one unified fleet report (sentinels go to stdout/`run.log` only)
 - `tbl_header`, `tbl_row`, `tbl_footer`
 - `parse_uptime_days`, `parse_version_short`
 - `resolve_inventory_file <path>` — local file wins, else `inventory/<basename>`, else the local path again (so errors stay local). Applied to `HOST_FILE` automatically at source time

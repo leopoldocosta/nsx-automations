@@ -172,6 +172,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   `eval` for dynamic arrays. Hosts and usernames are validated against a
   strict regex (IPv4 OR FQDN-like) — shell metacharacters are rejected.
 - `bin/deploy.sh` no longer uses `eval`; commands run via argv array.
+- **Docs synced to the current architecture.** The README now leads with the
+  fan-out (hub-and-spoke, 7 DCs) topology and the unified-report opt-in, and its
+  automation table + tree list all 7 automations (adds `apiuser_audit`,
+  `device_command`, `edge_hardware_inventory`). `docs/CONTRIBUTING.md` gains a
+  "fan-out contract" section (never read `/dev/tty`; wrap reports in
+  `report_wrap`) with a fan-out-safe skeleton, and a root `CONTRIBUTING.md`
+  pointer feeds GitHub's Community tab.
 
 ### Fixed
 - **`ADMIN_KEY`/`ROOT_KEY` never pointed at the registered device key.** They

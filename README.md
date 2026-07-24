@@ -8,6 +8,32 @@ Built from two previous projects:
 
 > **Notice:** No proprietary data, credentials, or real IP addresses are included.
 
+## Architecture — fan-out across datacenters
+
+The toolkit operates an NSX-T fleet spread over **7 datacenters** from a single
+**orchestrator** VM. Execution is **fanned out** (hub-and-spoke): the
+orchestrator SSHes into one **jump** VM per DC, and each jump runs the
+automation locally against *its own* NSX devices.
+
+```
+orchestrator VM ──SSH──► DC-A jump ──► NSX devices of DC-A
+                ──SSH──► DC-B jump ──► NSX devices of DC-B   ... (7 DCs)
+```
+
+Running an automation **directly on the orchestrator reaches only DC-A** (whose
+jump *is* the orchestrator) — and DC IPs overlap across sites, resolvable only
+from inside each jump. So fleet-wide actions always go through the fan-out:
+
+```bash
+./bin/run_across_datacenters.sh --conf ./datacenters.conf \
+    --automation <folder>/<script>.sh          # add --only-dc DC-A to test one
+```
+
+Each read-only automation can wrap its final report in the `report_wrap`
+sentinels; the fan-out then lifts every DC's report into **one unified fleet
+report** at the end, so you read all DCs at once instead of `cat`-ing each log.
+See [docs/MULTIDC.md](docs/MULTIDC.md) for the full topology and security model.
+
 ## Design
 
 **Three-layer libraries + thin automations:**
@@ -47,10 +73,13 @@ nsx-automations/
 │   └── uninstall_orchestrator_cron.sh  # remove daily cron (--purge-state also wipes state)
 │
 ├── automations/
-│   ├── edge_support_bundle/        # SB workflow (main + precheck + interactive CLI)
-│   ├── kb404700_disk_validation/   # detect root partition/overlay2 issues
-│   ├── lb_troubleshoot/            # native LB virtual-server/pool DOWN: diagnose + fix
-│   └── manager_rolling_reboot/     # multi-cluster monthly reboot
+│   ├── apiuser_audit/             # audit a service account (apiuser) across all managers
+│   ├── device_command/           # run any read-only NSX CLI command on every device
+│   ├── edge_hardware_inventory/  # Dell PowerEdge chassis + CPU inventory (Edges)
+│   ├── edge_support_bundle/      # SB workflow (main + precheck + interactive CLI)
+│   ├── kb404700_disk_validation/ # detect root partition/overlay2 issues
+│   ├── lb_troubleshoot/          # native LB virtual-server/pool DOWN: diagnose + fix
+│   └── manager_rolling_reboot/   # multi-cluster monthly reboot
 │
 ├── docs/
 │   ├── MANUAL.md
@@ -71,6 +100,7 @@ nsx-automations/
 │
 ├── datacenters.conf.example  # inventory for run_across_datacenters / deploy --all-dcs
 ├── reboot_plan.example       # orchestrator-side ordered plan for the daily rolling reboot
+├── CONTRIBUTING.md           # root pointer → docs/CONTRIBUTING.md (GitHub Community tab)
 └── .gitignore
 ```
 
@@ -78,7 +108,9 @@ nsx-automations/
 
 | Folder | Target | Purpose |
 |---|---|---|
+| `apiuser_audit` | Managers (root) | Audit a service account (`apiuser`): existence, lock, privilege, and SSH usage (`lastlog`/`wtmp`/`btmp`) across every manager |
 | `device_command` | Managers + Edges | Run any read-only NSX CLI command on every device of the DC (table + CSV) |
+| `edge_hardware_inventory` | Edges (root) | Dell PowerEdge chassis + Service Tag and CPU inventory (`dmidecode` + `lscpu`) across all Edges |
 | `edge_support_bundle` | Edges | Collect & verify NSX support bundles across all Edges |
 | `kb404700_disk_validation` | Edges | Check `/dev/sda2` + `overlay2` usage; flag nodes needing action |
 | `lb_troubleshoot` | Manager API + Edges | Diagnose a native LB VS/pool DOWN (id-namespace resolver, health-check classifier, guarded monitor fix) |
