@@ -68,6 +68,7 @@ nsx-automations/
 │   ├── configure_ssh_keys.sh           # SSH-key registration (edge/manager); --all-dcs walks every jump
 │   ├── run_across_datacenters.sh       # fan-out an automation to every DC, pull logs back
 │   ├── run_command_across_dcs.sh       # ad-hoc: run ANY command on every DC jump
+│   ├── generate_reboot_plan.sh         # orchestrator: build reboot_plan.conf from the fleet (round-robin)
 │   ├── rolling_reboot_next.sh          # orchestrator: reboot ONE manager (next entry in reboot_plan.conf)
 │   ├── install_orchestrator_cron.sh    # install daily cron on the orchestrator
 │   └── uninstall_orchestrator_cron.sh  # remove daily cron (--purge-state also wipes state)
@@ -95,11 +96,11 @@ nsx-automations/
 │   └── managers.conf.example #   copy to managers.conf (git-ignored)
 │
 ├── examples/
-│   ├── edge_nodes.example
-│   └── managers.conf.example
+│   └── reboot_plan_7dc_24managers.example  # sample 7-DC / 24-manager ordered reboot plan
 │
 ├── datacenters.conf.example  # inventory for run_across_datacenters / deploy --all-dcs
 ├── reboot_plan.example       # orchestrator-side ordered plan for the daily rolling reboot
+├── notify.conf.example       # per-automation Slack/Teams webhook routing (copy to notify.conf, git-ignored)
 ├── CONTRIBUTING.md           # root pointer → docs/CONTRIBUTING.md (GitHub Community tab)
 └── .gitignore
 ```
@@ -200,7 +201,7 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 ## Security
 
 - Passwords prompted interactively, cleared from memory after run
-- Root SSH on Edges enabled only during execution, disabled at the end
+- Root SSH enabled only during execution and disabled at the end — on Edges and, for root-using automations (e.g. `apiuser_audit`), on Managers too
 - `_sshpass_safe` writes passwords to a tmp file (mode 600), never to process args
 - Real host lists (`*.txt`, `managers.conf`) are git-ignored — only `.example` templates are committed
 - `managers.conf` parser rejects shell metacharacters in `hosts =` and `admin_user =` entries

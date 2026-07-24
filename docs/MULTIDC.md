@@ -292,6 +292,17 @@ ssh_key   = ~/.ssh/orchestrator_dcb     # optional per-section override
 | `--reset --yes` | _(off)_ | Reset index to 0. Requires `--yes` when run non-interactively. |
 | `--advance` | _(off)_ | Skip the next entry without rebooting it (records `last_status=skipped`). |
 
+`bin/generate_reboot_plan.sh` (orchestrator — build `reboot_plan.conf` from the fleet):
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--conf <file>` | `./datacenters.conf` | DC inventory; reads each jump's `inventory/managers.conf`. |
+| `--write` | _(off — prints to stdout)_ | Save to `./reboot_plan.conf` (keeps the old one as `.bak`). |
+
+Emits the interleaved round-robin plan (same-cluster managers spaced N days
+apart, N = clusters fleet-wide) and validates it with `parse_reboot_plan`
+before writing. Review with `bin/rolling_reboot_next.sh --list`.
+
 `bin/deploy.sh`:
 
 | Flag | Default | Meaning |

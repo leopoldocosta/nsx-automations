@@ -204,6 +204,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   "fan-out contract" section (never read `/dev/tty`; wrap reports in
   `report_wrap`) with a fan-out-safe skeleton, and a root `CONTRIBUTING.md`
   pointer feeds GitHub's Community tab.
+- **Repo-consistency sweep.** `bin/generate_reboot_plan.sh` (build the reboot
+  plan from the fleet) was undocumented — now in the README `bin/` tree, the
+  `docs/MULTIDC.md` CLI reference, and offered as the recommended step 1 in
+  `docs/RUNBOOK_ROLLING_REBOOT.md` (auto-generate vs. hand-edit the sample). The
+  README "Repository structure" block and Security section were corrected
+  (accurate `examples/` + root `*.example` listing; root-SSH toggle now noted for
+  Managers as well as Edges).
 
 ### Fixed
 - **`ADMIN_KEY`/`ROOT_KEY` never pointed at the registered device key.** They
@@ -259,6 +266,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   orchestrator-side daily cron (`bin/install_orchestrator_cron.sh`).
   Operators with the old cron should run `crontab -e` and remove the line
   manually, then install the orchestrator cron on the new model.
+- **Duplicate `examples/` templates** — `examples/edge_nodes.example` and
+  `examples/managers.conf.example` were stale, thinner copies of the canonical
+  `inventory/` templates (nothing referenced them). Removed; `inventory/` is the
+  single source for those templates. `examples/` now holds only the rich
+  `reboot_plan_7dc_24managers.example` sample used by the reboot runbook.
 
 ### Changed (cleanup)
 - PT→EN refactor: globals renamed for consistency across the codebase.

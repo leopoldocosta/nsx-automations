@@ -26,6 +26,10 @@ orquestradora e rotina de acompanhamento.
 
 ```bash
 # 1. Plano ordenado: 1 linha = 1 manager = 1 dia
+#    Opção A (recomendada) — gerar do fleet: conecta em cada jump, lê o
+#    inventory/managers.conf de cada DC e intercala em round-robin.
+./bin/generate_reboot_plan.sh --write    # salva ./reboot_plan.conf (revise depois)
+#    Opção B — montar à mão a partir do sample:
 cp examples/reboot_plan_7dc_24managers.example reboot_plan.conf
 vim reboot_plan.conf     # troque os IPs de exemplo pelos reais
 
