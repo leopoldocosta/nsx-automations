@@ -33,16 +33,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   unchanged. `apiuser_audit` now enables root SSH per manager, does its one root
   round-trip, and disables it again (login left OFF); the `set`/`clear ssh
   root-login` verb is field-confirmed on NSX Manager 4.1.2.
-- **`bin/configure_ssh_keys_all_dcs.sh` — fleet-wide, interactive SSH-key
+- **`configure_ssh_keys.sh --all-dcs` — fleet-wide, interactive SSH-key
   registration from the orchestrator.** `configure_ssh_keys.sh` reads the
-  *local* central inventory, so on the orchestrator it only touches the local
-  DC's managers. This helper walks every jump in `datacenters.conf` and runs
-  `configure_ssh_keys.sh` there over `ssh -t`, so each DC's admin/root password
-  prompts happen on its own jump (nothing stored on the orchestrator). Default
-  remote command is `--type manager --root`; `--only-dc <label>` targets one DC,
-  and anything after `--` overrides the remote args. It is deliberately **not**
-  part of the non-interactive `run_across_datacenters.sh` fan-out, since root-key
-  registration needs interactive password entry.
+  *local* central inventory, so on the orchestrator a plain run only touches the
+  local DC's managers. The new `--all-dcs --conf <datacenters.conf>` mode walks
+  every jump and runs the same script there over `ssh -t`, so each DC's
+  admin/root password prompts happen on its own jump (nothing stored on the
+  orchestrator). The local flags (`--type`/`--root`/`--key`/`--label`) are
+  forwarded to each per-jump run and default to `--type manager --root`;
+  `--only-dc <label>` targets one DC, `--ssh-key` overrides the jump key. Kept as
+  one script (mirroring `deploy.sh --all-dcs`) rather than a separate entrypoint;
+  it is deliberately **not** part of the non-interactive
+  `run_across_datacenters.sh` fan-out, since root-key registration needs
+  interactive password entry.
 - **Unified fleet report at the end of a multi-DC fan-out.** After the
   `summary.csv` table, `bin/run_across_datacenters.sh` now lifts each DC's final
   report out of its `run.log` and prints one combined report (saved to

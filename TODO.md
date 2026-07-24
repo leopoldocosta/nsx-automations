@@ -331,10 +331,10 @@ Stages (each idempotent, `--only-dc` aware, skippable):
   write `inventory/managers.conf` + `inventory/edge_nodes.txt` on each jump,
   so even the IPs aren't hand-edited. (Operator confirmed hand-editing the
   inventory is acceptable, so C is optional — B/D work with hand-made files.)
-- **D. NSX keys** — `configure_ssh_keys_all_dcs.sh` (exists): registers the
+- **D. NSX keys** — `configure_ssh_keys.sh --all-dcs` (exists): registers the
   jump key for admin + root, edges + managers, prompting admin/root per DC.
 
 Note: D and its cross-jump interactive walk already exist
-(`bin/configure_ssh_keys_all_dcs.sh`). Only A (+ the A→D wrapper, and C if
+(`configure_ssh_keys.sh --all-dcs`). Only A (+ the A→D wrapper, and C if
 wanted) is net-new. Deferred deliberately: the environment is already up and
 working, so this is a greenfield/rebuild convenience, not a current blocker.

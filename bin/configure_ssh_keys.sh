@@ -4,12 +4,29 @@
 # automations can run without prompting for passwords.
 #
 # Usage:
+#   # Local — register on THIS DC's NSX (reads the local central inventory):
 #   ./bin/configure_ssh_keys.sh --type edge    [--hosts <edge_nodes.txt>]
-#   ./bin/configure_ssh_keys.sh --type manager [--hosts <managers.conf>]
+#   ./bin/configure_ssh_keys.sh --type manager [--hosts <managers.conf>] [--root]
+#
+#   # Fleet — from the ORCHESTRATOR, run this same script on EVERY jump
+#   # (interactive, one DC at a time; each jump uses its own inventory):
+#   ./bin/configure_ssh_keys.sh --all-dcs --conf <datacenters.conf> [--only-dc <label>]
+#                               [--type manager --root]   # default when omitted
 #
 # Flags:
-#   --type edge|manager         Required. Edge uses ssh-key per user (admin + root);
-#                               manager uses `set user ... ssh-keys label ... value ...`.
+#   --all-dcs                   Orchestrator fan-out: walk every jump in --conf and
+#                               run THIS script there over `ssh -t` (interactive —
+#                               each DC's passwords are entered on its own jump,
+#                               nothing is stored here). The remaining flags below
+#                               (--type/--root/--key/--label) are forwarded to each
+#                               per-jump run; they default to `--type manager --root`.
+#                               Mirrors `deploy.sh --all-dcs`.
+#   --conf <file>               datacenters.conf (jump hosts). Required with --all-dcs.
+#   --only-dc <label>           With --all-dcs: run on ONLY this DC section.
+#   --ssh-key <path>            With --all-dcs: override the orchestrator->jump key.
+#   --type edge|manager         Required (local mode). Edge uses ssh-key per user
+#                               (admin + root); manager uses `set user ... ssh-keys
+#                               label ... value ...`.
 #   --hosts <file>              For edge: a flat text file of IPs.
 #                               For manager: an INI managers.conf (multi-cluster).
 #                               Default: inventory/edge_nodes.txt or
@@ -37,20 +54,101 @@ HOSTS_FILE=""
 SSH_PRIV="${HOME}/.ssh/id_rsa"
 KEY_LABEL="netops-key"
 REGISTER_ROOT=false
+ALL_DCS=false
+CONF=""
+ONLY_DC=""
+SSH_KEY_OVERRIDE=""
+PASSTHRU=()          # local flags forwarded to each per-jump run under --all-dcs
 
 usage(){ grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --type)    TYPE="$2"; shift 2 ;;
-    --hosts)   HOSTS_FILE="$2"; shift 2 ;;
-    --key)     SSH_PRIV="$2"; shift 2 ;;
-    --label)   KEY_LABEL="$2"; shift 2 ;;
-    --root)    REGISTER_ROOT=true; shift ;;
+    --type)    TYPE="$2"; PASSTHRU+=(--type "$2"); shift 2 ;;
+    --hosts)   HOSTS_FILE="$2"; shift 2 ;;   # per-jump inventory differs; NOT forwarded
+    --key)     SSH_PRIV="$2"; PASSTHRU+=(--key "$2"); shift 2 ;;
+    --label)   KEY_LABEL="$2"; PASSTHRU+=(--label "$2"); shift 2 ;;
+    --root)    REGISTER_ROOT=true; PASSTHRU+=(--root); shift ;;
+    --all-dcs) ALL_DCS=true; shift ;;
+    --conf)    CONF="$2"; shift 2 ;;
+    --only-dc) ONLY_DC="$2"; shift 2 ;;
+    --ssh-key) SSH_KEY_OVERRIDE="$2"; shift 2 ;;
     -h|--help) usage ;;
     *) log_err "Unknown flag: $1"; exit 1 ;;
   esac
 done
+
+# ---------------------------------------------------------------------------
+# --all-dcs (orchestrator): configure_ssh_keys.sh reads the LOCAL central
+# inventory, so on the orchestrator a plain run only touches the local DC's
+# managers (each jump owns its own inventory). This branch fans the SAME
+# registration out to every jump in datacenters.conf, running THIS script there
+# over `ssh -t` so each DC's admin/root prompts happen on its own jump. Nothing
+# is stored on the orchestrator. It exits before the local key-generation path,
+# which belongs to the jump, not here. Mirrors `deploy.sh --all-dcs`.
+# ---------------------------------------------------------------------------
+if "${ALL_DCS}"; then
+  [[ -n "${CONF}" ]] || { log_err "--all-dcs requires --conf <datacenters.conf>."; exit 1; }
+  [[ -f "${CONF}" ]] || { log_err "conf not found: ${CONF}"; exit 1; }
+  need_cmd ssh
+
+  # Flags forwarded to the per-jump run; default to the common case.
+  (( ${#PASSTHRU[@]} )) || PASSTHRU=(--type manager --root)
+
+  _quote_args(){ local out="" a; for a in "$@"; do out+=" $(printf '%q' "$a")"; done; printf '%s' "${out# }"; }
+
+  parse_datacenters_conf "${CONF}"
+
+  TARGETS=()
+  if [[ -n "${ONLY_DC}" ]]; then
+    for (( i=0; i<DC_COUNT; i++ )); do
+      [[ "${DC_LABELS[$i]}" == "${ONLY_DC}" ]] && TARGETS+=("${i}")
+    done
+    (( ${#TARGETS[@]} )) || { log_err "--only-dc='${ONLY_DC}' matched no section in ${CONF}."; exit 1; }
+  else
+    for (( i=0; i<DC_COUNT; i++ )); do TARGETS+=("${i}"); done
+  fi
+
+  log_banner "Fleet SSH-key config — ${#TARGETS[@]} datacenter(s)${ONLY_DC:+ (filtered: ${ONLY_DC})}"
+  log "Per-jump command: ./bin/configure_ssh_keys.sh ${PASSTHRU[*]}"
+  log "You will be prompted for each DC's admin + root passwords on its own jump; nothing is stored here."
+
+  OK_DCS=(); FAIL_DCS=()
+  for idx in "${TARGETS[@]}"; do
+    label="${DC_LABELS[$idx]}"
+    host="$(dc_jump_host "${idx}")"; user="$(dc_jump_user "${idx}")"
+    repo="$(dc_repo_path "${idx}")"; key="${SSH_KEY_OVERRIDE:-$(dc_ssh_key "${idx}")}"
+    key="${key/#\~/$HOME}"   # expand a leading ~
+    log_banner "[${label}] ${user}@${host}"
+    if [[ ! -f "${key}" ]]; then
+      log_err "[${label}] SSH key not found: ${key} — skipping."; FAIL_DCS+=("${label}"); continue
+    fi
+    # Single-quoted so $repo / args expand on the jump, not on the orchestrator.
+    printf -v remote_cmd 'cd %q && ./bin/configure_ssh_keys.sh %s' \
+      "${repo}" "$(_quote_args "${PASSTHRU[@]}")"
+    # -t: give the remote script a tty for its password prompts.
+    # BatchMode=yes: reach the jump with the key only (no jump-password fallback);
+    # it does not affect the remote program reading from the tty.
+    rc=0
+    ssh -t -i "${key}" \
+        -o BatchMode=yes -o ForwardAgent=no -o IdentitiesOnly=yes \
+        -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=30 \
+        "${user}@${host}" "bash -lc $(printf '%q' "${remote_cmd}")" || rc=$?
+    if (( rc == 0 )); then
+      log_ok "[${label}] configure_ssh_keys.sh completed."; OK_DCS+=("${label}")
+    else
+      log_err "[${label}] configure_ssh_keys.sh FAILED (rc=${rc})."; FAIL_DCS+=("${label}")
+    fi
+  done
+
+  log_banner "Fleet SSH-key config summary"
+  log_ok "Succeeded (${#OK_DCS[@]}): ${OK_DCS[*]:-none}"
+  if (( ${#FAIL_DCS[@]} > 0 )); then
+    log_err "Failed/skipped (${#FAIL_DCS[@]}): ${FAIL_DCS[*]}"
+    exit 1
+  fi
+  exit 0
+fi
 
 [[ -z "${TYPE}" ]] && { log_err "--type is required (edge|manager)."; exit 1; }
 if [[ -z "${HOSTS_FILE}" ]]; then

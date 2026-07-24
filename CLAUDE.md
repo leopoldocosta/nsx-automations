@@ -39,7 +39,7 @@ To act on the whole fleet, fan out — the jump runs the automation locally:
   **managers** run `./bin/configure_ssh_keys.sh --type manager --root` once
   (registers the root key) on that jump — or, from the orchestrator, do the whole
   fleet in one interactive pass with
-  `./bin/configure_ssh_keys_all_dcs.sh --conf ./datacenters.conf` (walks each
+  `./bin/configure_ssh_keys.sh --all-dcs --conf ./datacenters.conf` (walks each
   jump via `ssh -t`; prompts per DC; stores nothing). Missing that shows up as
   "root SSH failed" even when
   root login is on. Then each automation must **enable root SSH, do the work,

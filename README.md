@@ -65,8 +65,7 @@ nsx-automations/
 │
 ├── bin/
 │   ├── deploy.sh                       # copy lib/ + bin/ + automations/ to a target host (or --all-dcs)
-│   ├── configure_ssh_keys.sh           # one-shot SSH-key registration (edge or manager) on the LOCAL DC
-│   ├── configure_ssh_keys_all_dcs.sh   # orchestrator: run configure_ssh_keys.sh on every jump (interactive)
+│   ├── configure_ssh_keys.sh           # SSH-key registration (edge/manager); --all-dcs walks every jump
 │   ├── run_across_datacenters.sh       # fan-out an automation to every DC, pull logs back
 │   ├── run_command_across_dcs.sh       # ad-hoc: run ANY command on every DC jump
 │   ├── rolling_reboot_next.sh          # orchestrator: reboot ONE manager (next entry in reboot_plan.conf)
@@ -188,8 +187,8 @@ See [docs/MULTIDC.md](docs/MULTIDC.md) for the topology, security model, and ful
 ./bin/configure_ssh_keys.sh --type manager --root
 
 # From the ORCHESTRATOR, do the same on every DC's managers in one interactive
-# pass (walks each jump via ssh -t; prompts per DC; stores nothing).
-./bin/configure_ssh_keys_all_dcs.sh --conf ./datacenters.conf
+# pass (--all-dcs walks each jump via ssh -t; prompts per DC; stores nothing).
+./bin/configure_ssh_keys.sh --all-dcs --conf ./datacenters.conf
 ```
 
 Not every automation needs them — e.g. `kb404700_disk_validation` runs straight from the clone, no deploy needed.

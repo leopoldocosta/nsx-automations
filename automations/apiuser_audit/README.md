@@ -86,7 +86,7 @@ this from the orchestrator instead — it walks each jump interactively (`ssh -t
 prompting for that DC's admin + root passwords, storing nothing:
 
 ```bash
-./bin/configure_ssh_keys_all_dcs.sh --conf ./datacenters.conf   # add --only-dc DC-B for one
+./bin/configure_ssh_keys.sh --all-dcs --conf ./datacenters.conf   # add --only-dc DC-B for one
 ```
 
 At **run time**, `apiuser_audit` itself handles the toggle: for each manager it
