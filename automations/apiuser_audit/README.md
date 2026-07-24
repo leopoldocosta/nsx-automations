@@ -79,6 +79,16 @@ This enables root SSH, registers `id_rsa` for root, verifies a key-only root
 login, and disables root SSH again (leaving login OFF). Skipping it makes every
 manager report `ERROR: root SSH failed`.
 
+`configure_ssh_keys.sh` reads the **local** central inventory, so run on the
+orchestrator it only touches the local DC's managers (each jump owns its own
+inventory). To register the root key on **every** DC's managers in one pass, run
+this from the orchestrator instead — it walks each jump interactively (`ssh -t`),
+prompting for that DC's admin + root passwords, storing nothing:
+
+```bash
+./bin/configure_ssh_keys_all_dcs.sh --conf ./datacenters.conf   # add --only-dc DC-B for one
+```
+
 At **run time**, `apiuser_audit` itself handles the toggle: for each manager it
 enables root SSH (as the cluster's admin user, via the admin key), does one root
 round-trip, then disables root SSH immediately — so root login is left OFF even

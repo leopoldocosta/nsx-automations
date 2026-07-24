@@ -97,6 +97,12 @@ vim datacenters.conf
 
 # Mirror the latest code to every jump (one command)
 ./bin/deploy.sh --all-dcs --conf ./datacenters.conf
+
+# (optional) Register the ROOT key on every DC's managers, one interactive pass.
+# Needed by root-using automations (e.g. apiuser_audit). Walks each jump via
+# ssh -t and runs configure_ssh_keys.sh --type manager --root there; you enter
+# each DC's admin + root passwords on its own jump — nothing is stored here.
+./bin/configure_ssh_keys_all_dcs.sh --conf ./datacenters.conf
 ```
 
 ## Ongoing operation
