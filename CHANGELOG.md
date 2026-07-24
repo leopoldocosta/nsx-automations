@@ -8,6 +8,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`apiuser_audit` — service-account audit across all NSX-T Managers**
+  (`automations/apiuser_audit/`). Read-only, runs as root, fleet-wide via the
+  fan-out (unified report via `report_wrap`). **v1** validates, per manager,
+  *without* opening the large/compressed logs: whether the account exists (it
+  may not — a reported outcome), whether it is locked (`passwd -S`), its shell,
+  whether it is privileged (`sudoers`/admin group), and its SSH usage from the
+  login-accounting files (`lastlog`/`wtmp`/`btmp`) — last login + source, plus
+  session/failure counts filtered by a time window (`--hours` default 1,
+  `--days`, `--since`). Verdict: `ABSENT`/`PRESENT_LOCKED`/`PRESENT_UNUSED`/
+  `PRESENT_USED`/`ERROR`, with a `PRIVILEGED` flag. **v2 (planned)** adds the
+  deep `auth.log*` scan and the NSX API audit-log scan (`userName="<acct>"`),
+  selecting rotated/`.gz` files by mtime and streaming with `zcat -f` so the
+  window can widen cheaply.
 - **Unified fleet report at the end of a multi-DC fan-out.** After the
   `summary.csv` table, `bin/run_across_datacenters.sh` now lifts each DC's final
   report out of its `run.log` and prints one combined report (saved to
