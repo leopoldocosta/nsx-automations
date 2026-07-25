@@ -338,3 +338,53 @@ Note: D and its cross-jump interactive walk already exist
 (`configure_ssh_keys.sh --all-dcs`). Only A (+ the A→D wrapper, and C if
 wanted) is net-new. Deferred deliberately: the environment is already up and
 working, so this is a greenfield/rebuild convenience, not a current blocker.
+
+## 11. CI consistency gate — stop docs from drifting (PENDING — the real fix)
+
+Docs drifted from reality (undocumented `bin/generate_reboot_plan.sh`, duplicate
+`examples/` templates, stale README structure block) and it took a manual audit
+to catch. Make drift a **build failure** instead. Add
+`tests/test_repo_consistency.bats` (auto-discovered by the existing `bats tests/`
+CI job — no workflow change) asserting the cheap, high-value invariants:
+
+- every `bin/*.sh` is referenced in `README.md`;
+- every `automations/*/` folder appears in the README automation table AND has a
+  `README.md`;
+- no dangling reference: every `bin/...sh` / `automations/.../*.sh` path named in
+  any `.md` exists on disk;
+- every automation/`bin` script has a shebang + `set -euo pipefail`.
+
+Also codify it for humans/agents: a "definition of done" line in
+`docs/CONTRIBUTING.md` — a new/renamed script updates the README tree + table +
+runbook/MULTIDC in the SAME commit.
+
+## 12. Automation README ↔ actual flags fine-check (PENDING — "depois")
+
+Line-by-line: confirm each `automations/*/README.md` documents exactly the
+`--flags` its script actually parses (no missing, no removed). Harder to automate
+than item 11 (needs extracting each script's real flag set from its `case`/getopts
+and matching prose), so do a manual pass first; consider folding into item 11's
+gate later as a warn-level check.
+
+## 13. Root-key registration on NSX Manager 4.1.2 — two field failures (OPEN)
+
+`configure_ssh_keys.sh --type manager --root` worked cleanly on **4.2.1**
+managers but failed on **two 4.1.2** managers, in two distinct ways (both
+orthogonal to the admin-key transport fix — they are about ROOT, not admin):
+
+- **Mode A — key stored, key-only root login still fails** (e.g. `…214.28`):
+  the CLI accepted `set user root ssh-keys …` (registered ok) but the BatchMode
+  key-only login AS ROOT failed at verification. NOT a global algorithm policy,
+  because the **admin** RSA key logs in fine on the same box (so `ssh-rsa`/SHA2 is
+  accepted). Suspects: 4.1.2 stores/serves the root key differently, `set ssh
+  root-login` enables password- but not key-root-login, or a settle-time issue.
+  Diagnose: `ssh admin@ip` → `get user root ssh-keys` (value == id_rsa.pub?);
+  `ssh -v -i ~/.ssh/id_rsa root@ip exit 2>&1 | grep -iE 'no mutual|Permission denied|publickey'`.
+- **Mode B — root password rejected** (e.g. `…36.201`): the CLI returned
+  `% Invalid current password specified` for the `password <ROOT_PASS>` confirm.
+  Most likely the root password entered ≠ that manager's actual root password
+  (that box's root creds are suspect from an earlier session). Verify the real
+  root password and rerun; if 4.1.2 changes the confirm semantics, capture that.
+
+Need the diagnostic output from one 4.1.2 manager to pin the root cause before
+coding anything. The 4.2.1 fleet is unaffected.
