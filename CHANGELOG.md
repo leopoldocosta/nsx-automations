@@ -53,6 +53,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   (README/docs/CLAUDE/automation READMEs — TODO/CHANGELOG excluded) naming a
   non-existent `bin/` script; every script carrying a shebang + `set -euo
   pipefail`. Converts the previous manual audit into an automated guard.
+- **`apiuser_audit`: evidence + opt-in log activity scan.** Every run now writes
+  an evidence dump (`logs/apiuser_audit_evidence_<ts>.txt`) with the exact raw
+  probe output per manager (real `lastlog`/`last`/`btmp` lines + accounting-file
+  `ls -l`), and the report gained an EVIDENCE block — so the result is verifiable
+  instead of taken on trust. New `--scan-logs` (opt-in, off by default) adds a
+  first-cut activity scan when the account exists: `/var/log/auth.log*` and
+  candidate NSX audit-log paths are grepped for the account, streamed with
+  `zcat -f` and bounded to files touched since the window (`find -newermt`),
+  recording per file the match count + first/last matching line. The heavy read
+  stays on the manager; only the evidence crosses the wire. Doubles as the recon
+  that anchors the full v2 NSX-audit field parsing.
 - **Unified fleet report at the end of a multi-DC fan-out.** After the
   `summary.csv` table, `bin/run_across_datacenters.sh` now lifts each DC's final
   report out of its `run.log` and prints one combined report (saved to

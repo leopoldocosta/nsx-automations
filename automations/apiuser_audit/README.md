@@ -43,6 +43,7 @@ shown — they are current facts, not events.
 | `--days N` | window = now − N days | — (overrides `--hours`) |
 | `--since "<ts>"` | absolute start, any GNU-`date` string | — (overrides both) |
 | `--user <name>` | account to audit (`[A-Za-z0-9._-]`) | `apiuser` |
+| `--scan-logs` | also scan `auth.log*` + candidate NSX audit logs for the account (opt-in, heavier — start narrow) | off |
 
 ## Verdict
 
@@ -114,7 +115,24 @@ Whole fleet, from the orchestrator (unified report at the end):
 
 ## Output
 
-- Human report + `NEEDS ATTENTION` list, `tee`'d to
+- Human report + `NEEDS ATTENTION` list + an **EVIDENCE** block (per manager:
+  the accounting-file mtimes it read, and with `--scan-logs` the auth/audit
+  activity — match count + first/last matching line). `tee`'d to
   `logs/apiuser_audit_<ts>.txt` and wrapped in the fan-out report sentinels
   (so it appears in the unified fleet report).
 - Machine-readable `logs/apiuser_audit_<ts>.csv` (one row per manager).
+- **Evidence dump** `logs/apiuser_audit_evidence_<ts>.txt`: the exact raw probe
+  output per manager (real `lastlog`/`last`/`btmp` lines, file `ls -l`, and any
+  `--scan-logs` matches) — a verifiable record of what was actually read.
+
+## Scan the manager's own logs (`--scan-logs`)
+
+By default the audit stays cheap (account metadata + login accounting, no big
+logs). `--scan-logs` adds a first-cut **activity** scan when the account exists:
+`/var/log/auth.log*` (SSH) and candidate NSX audit-log paths are grepped for the
+account, streamed with `zcat -f` and bounded to files touched since the window
+(`find -newermt`). The heavy read happens **on the manager**; only the evidence
+(count + first/last line per file) crosses the wire. Start narrow
+(`--hours 1 --scan-logs`) then widen. Precise per-event windowing and NSX audit
+field parsing (uri/method/source IP/response code) is the remaining v2 step —
+the evidence this emits anchors the real log format.

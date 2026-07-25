@@ -15,10 +15,19 @@
 #   6. SSH sessions in the window?             last  (wtmp)  filtered by --since
 #   7. Failed SSH attempts in the window?      last -f /var/log/btmp filtered
 #
-# v2 (planned, not here): scan /var/log/auth.log* (deep SSH) and the NSX API
-# audit log (userName="<acct>") by time window, selecting rotated/.gz files by
-# mtime and streaming with `zcat -f` so the huge/compressed volume stays cheap.
-# The window flags below are already plumbed for that.
+# --scan-logs (opt-in) adds a FIRST-CUT activity scan: /var/log/auth.log* (SSH)
+# and candidate NSX audit logs are grepped for the account, streamed with
+# `zcat -f`, bounded to files touched since the window (`find -newermt`). Per
+# file it records the match count + first/last matching line (evidence — the
+# heavy read stays on the manager; only the small evidence crosses the wire).
+# It is opt-in because the logs are huge: start narrow (--hours 1), then widen.
+# Precise per-event windowing + NSX audit field parsing (uri/method/src/code) is
+# the remaining v2 work; the evidence this emits anchors that format.
+#
+# Every run also writes an EVIDENCE file (logs/apiuser_audit_evidence_<ts>.txt):
+# the exact raw probe output per manager — the real lastlog/last/btmp lines, the
+# accounting-file mtimes, and any scan hits — so the result is verifiable
+# without trusting the summary.
 #
 # The window (--hours / --days / --since) filters only EVENT metrics (wtmp/btmp
 # sessions). STATE metrics (exists / locked / shell / last-login time) are
@@ -38,6 +47,8 @@
 #   --days <N>       Window = now - N days (overrides --hours).
 #   --since "<ts>"   Window start as an absolute GNU-date string
 #                    (e.g. "2026-07-24 09:00"). Overrides --hours/--days.
+#   --scan-logs      Also scan auth.log* + candidate NSX audit logs for the
+#                    account (opt-in; heavier). Off by default.
 #   -h | --help      Show this header.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -61,16 +72,18 @@ ACCOUNT="apiuser"
 WIN_HOURS=1
 WIN_DAYS=""
 SINCE_ARG=""
+SCAN_LOGS=false      # --scan-logs: deep auth.log + NSX audit-log activity scan
 
 usage(){ grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --user)   ACCOUNT="$2"; shift 2 ;;
-    --hours)  WIN_HOURS="$2"; shift 2 ;;
-    --days)   WIN_DAYS="$2"; shift 2 ;;
-    --since)  SINCE_ARG="$2"; shift 2 ;;
-    -h|--help) usage ;;
+    --user)      ACCOUNT="$2"; shift 2 ;;
+    --hours)     WIN_HOURS="$2"; shift 2 ;;
+    --days)      WIN_DAYS="$2"; shift 2 ;;
+    --since)     SINCE_ARG="$2"; shift 2 ;;
+    --scan-logs) SCAN_LOGS=true; shift ;;
+    -h|--help)   usage ;;
     *) log_err "Unknown flag: $1"; exit 1 ;;
   esac
 done
@@ -113,6 +126,9 @@ declare -A M_LOCK M_PRIV M_PRIV_WHY
 declare -A M_LASTLOGIN M_LASTSRC
 declare -A M_SESS_CNT M_SESS_SRCS M_FAIL_CNT
 declare -A M_VERDICT M_ERROR
+declare -A M_FILES          # evidence: ls -l of the accounting files read
+declare -A M_AUTH_EV        # --scan-logs: auth.log activity evidence (per file)
+declare -A M_AUDIT_EV       # --scan-logs: NSX audit-log activity evidence (per file)
 
 MGR_IPS=()
 
@@ -150,6 +166,16 @@ _section(){
 }
 
 # ---------------------------------------------------------------------------
+# _section_next <raw> <begin_marker>
+#   Echo the lines from just after <begin_marker> until the next line that
+#   starts with "----" (any marker). Used for sections whose following marker
+#   varies (FILES is followed by AUTHLOG under --scan-logs, else by END).
+# ---------------------------------------------------------------------------
+_section_next(){
+  awk -v b="$2" 'index($0,b){f=1;next} f && /^----/{f=0} f' <<<"$1"
+}
+
+# ---------------------------------------------------------------------------
 # _epoch_of_last_line <last -F line>
 #   `last -F` prints e.g.:  "apiuser pts/0 10.0.0.5 Wed Jul 24 13:05:11 2026 - ..."
 #   The login timestamp is a fixed 5-field run ending in the year. Extract it
@@ -183,22 +209,69 @@ collect_manager(){
   enable_manager_root_ssh "${ip}"
   sleep 2
 
-  # Single round-trip, marker-delimited so we split locally (same idiom as
-  # edge_hardware_inventory). The account name is allowlist-validated above.
+  # Single root round-trip, marker-delimited so we split locally. Built from a
+  # single-quoted heredoc (nothing interpolates locally — the awk in the scan
+  # keeps its own quotes) with two SAFE placeholders substituted after:
+  # __ACCT__ is allowlist-validated [A-Za-z0-9._-]; __SINCE__ is an epoch int.
+  # ----FILES---- (always) proves which accounting files were read + their mtime.
+  # With --scan-logs, ----AUTHLOG----/----NSXAUDIT---- add real activity evidence
+  # (per file: match count + first/last matching line), streamed with `zcat -f`
+  # and bounded to files touched since the window (`find -newermt`). The heavy
+  # read happens ON the manager; only the small evidence crosses the wire.
+  local probe
+  probe="$(cat <<'PROBE'
+acct="__ACCT__"; since="__SINCE__"
+echo "----EXISTS----";   getent passwd "$acct" 2>/dev/null || true
+echo "----PWSTATUS----"; passwd -S "$acct" 2>/dev/null || true
+echo "----ID----";       id "$acct" 2>/dev/null || true
+echo "----SUDO----";     grep -rHnE "(^|[[:space:]])$acct([[:space:]]|,|$)" /etc/sudoers /etc/sudoers.d/ 2>/dev/null || true
+echo "----LASTLOG----";  lastlog -u "$acct" 2>/dev/null || true
+echo "----LAST----";     last -F -w "$acct" 2>/dev/null | head -n 500 || true
+echo "----LASTB----";    last -F -w -f /var/log/btmp "$acct" 2>/dev/null | head -n 500 || true
+echo "----FILES----"
+for f in /var/log/lastlog /var/log/wtmp /var/log/btmp; do
+  if [ -e "$f" ]; then ls -l --time-style=long-iso "$f" 2>/dev/null || ls -l "$f" 2>/dev/null; else echo "MISSING $f"; fi
+done
+PROBE
+)"
+  if "${SCAN_LOGS}"; then
+    probe+="$(cat <<'PROBE'
+
+if getent passwd "$acct" >/dev/null 2>&1; then
+  echo "----AUTHLOG----"
+  for f in $(find /var/log -maxdepth 1 -name 'auth.log*' -newermt "@$since" 2>/dev/null | sort); do
+    zcat -f "$f" 2>/dev/null | awk -v u="$acct" -v fn="$f" 'index($0,u){c++; if(c==1)fl=$0; ll=$0} END{printf "FILE %s matches=%d\n", fn, c+0; if(c){print "  first: " fl; print "  last:  " ll}}'
+  done
+  echo "----NSXAUDIT----"
+  for cand in /var/log/audit/audit.log /var/log/nsx-audit.log /var/log/proton/nsxapi.log /var/log/syslog; do
+    for f in "$cand"*; do
+      [ -e "$f" ] || continue
+      if [ -z "$(find "$f" -newermt "@$since" 2>/dev/null)" ]; then echo "SKIP(old) $f"; continue; fi
+      zcat -f "$f" 2>/dev/null | awk -v u="$acct" -v fn="$f" 'index($0,u){c++; if(c==1)fl=$0; ll=$0} END{printf "FILE %s matches=%d\n", fn, c+0; if(c){print "  first: " fl; print "  last:  " ll}}'
+    done
+  done
+fi
+PROBE
+)"
+  fi
+  probe+=$'\necho "----END----"'
+  probe="${probe//__ACCT__/${ACCOUNT}}"
+  probe="${probe//__SINCE__/${SINCE_EPOCH}}"
+
   local raw
-  raw="$(root_cmd "${ip}" '
-    acct='"${ACCOUNT}"'
-    echo "----EXISTS----";   getent passwd "$acct" 2>/dev/null || true
-    echo "----PWSTATUS----"; passwd -S "$acct" 2>/dev/null || true
-    echo "----ID----";       id "$acct" 2>/dev/null || true
-    echo "----SUDO----";     grep -rHnE "(^|[[:space:]])${acct}([[:space:]]|,|$)" /etc/sudoers /etc/sudoers.d/ 2>/dev/null || true
-    echo "----LASTLOG----";  lastlog -u "$acct" 2>/dev/null || true
-    echo "----LAST----";     last -F -w "$acct" 2>/dev/null | head -n 500 || true
-    echo "----LASTB----";    last -F -w -f /var/log/btmp "$acct" 2>/dev/null | head -n 500 || true
-    echo "----END----"
-  ' 2>/dev/null || true)"
+  raw="$(root_cmd "${ip}" "${probe}" 2>/dev/null || true)"
 
   disable_manager_root_ssh "${ip}"
+
+  # Evidence: append the exact raw probe output for this manager, so the run
+  # leaves a verifiable record of what was actually read (the real lastlog/
+  # last/btmp lines, the accounting-file mtimes, and — with --scan-logs — the
+  # matching auth/audit lines). No re-derivation, no trust required.
+  if [[ -n "${raw}" && -n "${EVIDENCE_FILE:-}" ]]; then
+    { printf '\n===== %s [%s]  probed %s =====\n' "${ip}" "${M_CLUSTER[${ip}]:-?}" "$(date '+%F %T')"
+      printf '%s\n' "${raw}"
+    } >> "${EVIDENCE_FILE}"
+  fi
 
   if [[ -z "${raw}" ]] || ! grep -q '^----END----$' <<<"${raw}"; then
     M_ERROR["${ip}"]="root SSH failed or probe returned nothing."
@@ -288,6 +361,13 @@ collect_manager(){
   done <<< "${lb_block}"
   M_FAIL_CNT["${ip}"]="${fcnt}"
 
+  # ---- Evidence: accounting-file mtimes + (with --scan-logs) log activity ----
+  M_FILES["${ip}"]="$(_section_next "${raw}" '----FILES----')"
+  if "${SCAN_LOGS}"; then
+    M_AUTH_EV["${ip}"]="$(_section_next "${raw}"  '----AUTHLOG----')"
+    M_AUDIT_EV["${ip}"]="$(_section_next "${raw}" '----NSXAUDIT----')"
+  fi
+
   # ---- Verdict ----
   if [[ "${M_LOCK[${ip}]}" == "locked" && "${M_LASTLOGIN[${ip}]}" == "never" && "${cnt}" -eq 0 ]]; then
     M_VERDICT["${ip}"]="PRESENT_LOCKED"
@@ -366,9 +446,47 @@ print_report(){
       fi
     done
     ${any} || printf '  Nothing flagged: account is absent/locked/unused everywhere in this window.\n'
+
+    # ---- Evidence: what was actually read per manager (proof it worked) ----
+    echo ""; echo "${sep}"
+    printf '  EVIDENCE — sources read per manager (full raw dump: %s)\n' "${EVIDENCE_FILE:-<none>}"
+    echo "${sep}"
+    local _l
+    for ip in "${MGR_IPS[@]}"; do
+      [[ "${M_EXISTS[${ip}]:-no}" == "yes" ]] || continue
+      printf '  - %-17s [%s]\n' "${ip}" "${M_CLUSTER[${ip}]:-?}"
+      printf '      accounting files (mtime = last write):\n'
+      if [[ -n "${M_FILES[${ip}]:-}" ]]; then
+        while IFS= read -r _l; do [[ -n "${_l}" ]] && printf '        %s\n' "${_l}"; done <<<"${M_FILES[${ip}]}"
+      else
+        printf '        (none captured)\n'
+      fi
+      if "${SCAN_LOGS}"; then
+        printf '      auth.log activity (files touched since the window):\n'
+        if [[ -n "${M_AUTH_EV[${ip}]:-}" ]]; then
+          while IFS= read -r _l; do [[ -n "${_l}" ]] && printf '        %s\n' "${_l}"; done <<<"${M_AUTH_EV[${ip}]}"
+        else
+          printf '        (no auth.log touched in window)\n'
+        fi
+        printf '      NSX audit-log activity (candidate paths):\n'
+        if [[ -n "${M_AUDIT_EV[${ip}]:-}" ]]; then
+          while IFS= read -r _l; do [[ -n "${_l}" ]] && printf '        %s\n' "${_l}"; done <<<"${M_AUDIT_EV[${ip}]}"
+        else
+          printf '        (no candidate audit log matched in window)\n'
+        fi
+      fi
+    done
+    "${SCAN_LOGS}" || printf '  (add --scan-logs for auth.log + NSX audit-log activity evidence — heavier; start narrow)\n'
+
     echo ""
-    printf '  NOTE: v1 covers existence + SSH (wtmp/btmp/lastlog). API-call auditing\n'
-    printf '        (NSX audit log) lands in v2 once the log format is anchored.\n'
+    if "${SCAN_LOGS}"; then
+      printf '  NOTE: --scan-logs did a FIRST-CUT activity scan (match count + first/last line\n'
+      printf '        per file). Precise per-event windowing and API field parsing (uri/method/\n'
+      printf '        source IP/response code) is the next step — the evidence above anchors it.\n'
+    else
+      printf '  NOTE: covers existence + SSH (wtmp/btmp/lastlog) + which files were read.\n'
+      printf '        Add --scan-logs to also scan auth.log + the NSX audit log for activity.\n'
+    fi
     echo ""; echo "${sep}"; echo "  END OF REPORT"; echo "${sep}"; echo ""
   } | tee "${REPORT_FILE}"
 
@@ -386,8 +504,9 @@ print_report(){
     done
   } > "${CSV_FILE}"
 
-  log "Report saved to: ${REPORT_FILE}"
-  log "CSV    saved to: ${CSV_FILE}"
+  log "Report   saved to: ${REPORT_FILE}"
+  log "CSV      saved to: ${CSV_FILE}"
+  log "Evidence saved to: ${EVIDENCE_FILE}"
 }
 
 # ---------------------------------------------------------------------------
@@ -407,9 +526,12 @@ main(){
     log_warn "No root key and no TTY — relying on ROOT_PASS from the environment."
   fi
 
-  REPORT_FILE="${LOG_DIR}/apiuser_audit_$(date '+%Y%m%d_%H%M%S').txt"
-  CSV_FILE="${LOG_DIR}/apiuser_audit_$(date '+%Y%m%d_%H%M%S').csv"
-  LOG_FILE="${LOG_DIR}/apiuser_audit_run_$(date '+%Y%m%d_%H%M%S').log"
+  local ts; ts="$(date '+%Y%m%d_%H%M%S')"
+  REPORT_FILE="${LOG_DIR}/apiuser_audit_${ts}.txt"
+  CSV_FILE="${LOG_DIR}/apiuser_audit_${ts}.csv"
+  EVIDENCE_FILE="${LOG_DIR}/apiuser_audit_evidence_${ts}.txt"
+  LOG_FILE="${LOG_DIR}/apiuser_audit_run_${ts}.log"
+  : > "${EVIDENCE_FILE}"    # created up front so the path in the report is valid
   exec > >(tee -a "${LOG_FILE}") 2>&1
 
   log_banner "apiuser Audit — ${ACCOUNT}"

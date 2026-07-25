@@ -390,3 +390,28 @@ present — the rerun just re-verifies green). NSX manager root passwords expire
 **Possible follow-up (optional):** distinguish "key auth ok but session aborted"
 (expired password) from a genuine key failure in the verification, instead of a
 single generic warning. Low priority now that the hint calls it out.
+
+## 14. One UNIFIED fleet table across all automations (PENDING — operator-requested)
+
+Operator wants: at the end of ANY automation fanned out over DCs — both the
+query kind (cpu inventory, apiuser audit, disk validation) and the command/
+maintenance kind (device_command, rolling reboot, support bundle) — a **single
+consolidated table** of every device checked across every DC, with a `DC`
+column. No `cat` per DC, no per-DC report stacked; extra/verbose output goes
+after it or into a separate detailed file.
+
+Current state (partial): `run_across_datacenters.sh` lifts each DC's
+`report_wrap` block into `unified_report.txt`, but (a) only 4/7 automations emit
+that block — **device_command, manager_rolling_reboot, edge_support_bundle do
+not** — and (b) it CONCATENATES per-DC report blocks rather than merging into one
+table with a DC column.
+
+Plan:
+- New `lib` helper: automations emit a machine-readable per-device row block
+  (sentinel-wrapped TSV: header + rows) alongside the human `report_wrap`.
+- `run_across_datacenters.sh` merges every DC's rows into ONE table, prepending a
+  `DC` column, rendered once; the verbose per-DC human report goes to a detailed
+  file (`<out>/<DC>/report.txt`).
+- Wire ALL 7 automations to emit the row block.
+- Consistency-gate check (extend item 11): every fan-out automation must emit the
+  table block, so this cannot silently rot again.
