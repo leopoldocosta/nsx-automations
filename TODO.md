@@ -366,25 +366,27 @@ than item 11 (needs extracting each script's real flag set from its `case`/getop
 and matching prose), so do a manual pass first; consider folding into item 11's
 gate later as a warn-level check.
 
-## 13. Root-key registration on NSX Manager 4.1.2 — two field failures (OPEN)
+## 13. Root-key registration false-negative on EXPIRED root password (RESOLVED)
 
-`configure_ssh_keys.sh --type manager --root` worked cleanly on **4.2.1**
-managers but failed on **two 4.1.2** managers, in two distinct ways (both
-orthogonal to the admin-key transport fix — they are about ROOT, not admin):
+`configure_ssh_keys.sh --type manager --root` failed on two managers. Framed at
+first as "4.1.2 vs 4.2.1", but the real correlation is an **expired root
+password**, not the build (the 4.2.1 boxes simply had valid root passwords).
 
-- **Mode A — key stored, key-only root login still fails** (e.g. `…214.28`):
-  the CLI accepted `set user root ssh-keys …` (registered ok) but the BatchMode
-  key-only login AS ROOT failed at verification. NOT a global algorithm policy,
-  because the **admin** RSA key logs in fine on the same box (so `ssh-rsa`/SHA2 is
-  accepted). Suspects: 4.1.2 stores/serves the root key differently, `set ssh
-  root-login` enables password- but not key-root-login, or a settle-time issue.
-  Diagnose: `ssh admin@ip` → `get user root ssh-keys` (value == id_rsa.pub?);
-  `ssh -v -i ~/.ssh/id_rsa root@ip exit 2>&1 | grep -iE 'no mutual|Permission denied|publickey'`.
-- **Mode B — root password rejected** (e.g. `…36.201`): the CLI returned
-  `% Invalid current password specified` for the `password <ROOT_PASS>` confirm.
-  Most likely the root password entered ≠ that manager's actual root password
-  (that box's root creds are suspect from an earlier session). Verify the real
-  root password and rerun; if 4.1.2 changes the confirm semantics, capture that.
+**Root cause (field-confirmed):** the key registers fine (`get user root
+ssh-keys` lists it) and key auth succeeds once root SSH is on — but with the root
+password **expired**, PAM forces a password change at login, which aborts the
+non-interactive `ssh -i key -o BatchMode=yes root@ip exit` verification. So the
+check reported "key-only login still fails" (Mode A) though the key was valid.
+The other box's `% Invalid current password specified` (Mode B) is the same cause
+— the expired/old password was rejected at the CLI `password <ROOT_PASS>` confirm.
 
-Need the diagnostic output from one 4.1.2 manager to pin the root cause before
-coding anything. The 4.2.1 fleet is unaffected.
+**Fixed:** the verification WARN now names an EXPIRED root password as the first
+suspect (`lib/nsx_manager.sh`), so the tool self-explains instead of pointing at
+algorithm policy / build support. **Operational remedy:** `ssh root@<mgr>`,
+complete the forced password change, then rerun `--root` (the key may already be
+present — the rerun just re-verifies green). NSX manager root passwords expire
+(default policy), so expect this on any long-lived box.
+
+**Possible follow-up (optional):** distinguish "key auth ok but session aborted"
+(expired password) from a genuine key failure in the verification, instead of a
+single generic warning. Low priority now that the hint calls it out.

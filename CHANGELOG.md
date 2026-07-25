@@ -231,6 +231,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   true/true) and `configure_ssh_keys.sh` now asks the admin password ONLY when a
   host still needs its admin key registered, and the root password ONLY with
   `--root`.
+- **Root key-verification WARN now names an EXPIRED root password as the first
+  suspect** (`_register_manager_ssh_key`). Field finding: on managers with an
+  expired root password the key registers and authenticates fine, but PAM's
+  forced password change aborts the non-interactive BatchMode verification, so
+  the tool wrongly implied a key/algorithm/build problem. The hint now says to
+  `ssh root@<mgr>`, complete the password change, and rerun. (Correlated with
+  password expiry, not the 4.1.2 vs 4.2.1 build.)
 
 ### Fixed
 - **`ADMIN_KEY`/`ROOT_KEY` never pointed at the registered device key.** They

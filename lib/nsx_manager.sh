@@ -155,10 +155,12 @@ _register_manager_ssh_key(){
       log_ok "${ip}: ${target_user} key VERIFIED (BatchMode login ok)."
     else
       log_warn "${ip}: CLI accepted the key but a key-only login as ${target_user} still fails."
-      [[ "${target_user}" == "root" ]] && \
-        log "  Root SSH login must be ON for this check — is 'set ssh root-login' supported on this manager build?"
-      log "  Inspect: ssh ${auth_user}@${ip} then 'get user ${target_user} ssh-keys'"
-      log "  Value matches? Check algorithm policy: ssh -v -i <key> ${target_user}@${ip} exit 2>&1 | grep -i 'no mutual'"
+      log "  Inspect: ssh ${auth_user}@${ip} then 'get user ${target_user} ssh-keys'. If the key IS listed, the key is fine — the block is one of:"
+      if [[ "${target_user}" == "root" ]]; then
+        log "    • EXPIRED root password (field-confirmed, Manager 4.1.2): a key login authenticates, but the forced password change aborts this non-interactive (BatchMode) session, so the check fails. Fix: ssh root@${ip}, complete the password change, then rerun."
+        log "    • Root SSH login not actually ON — confirm 'set ssh root-login' took (this run enables it before the check)."
+      fi
+      log "    • Key-algorithm policy: ssh -v -i <key> ${target_user}@${ip} exit 2>&1 | grep -i 'no mutual'."
       return 1
     fi
   fi
