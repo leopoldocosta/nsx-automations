@@ -46,6 +46,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   it is deliberately **not** part of the non-interactive
   `run_across_datacenters.sh` fan-out, since root-key registration needs
   interactive password entry.
+- **Repo-consistency CI gate** (`tests/test_repo_consistency.bats`,
+  auto-discovered by the existing `bats tests/` job). Makes docs-vs-reality drift
+  a build failure: every `bin/*.sh` referenced in the README; every
+  `automations/*/` folder in the README with a `README.md`; no current-state doc
+  (README/docs/CLAUDE/automation READMEs — TODO/CHANGELOG excluded) naming a
+  non-existent `bin/` script; every script carrying a shebang + `set -euo
+  pipefail`. Converts the previous manual audit into an automated guard.
 - **Unified fleet report at the end of a multi-DC fan-out.** After the
   `summary.csv` table, `bin/run_across_datacenters.sh` now lifts each DC's final
   report out of its `run.log` and prints one combined report (saved to
@@ -211,6 +218,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   README "Repository structure" block and Security section were corrected
   (accurate `examples/` + root `*.example` listing; root-SSH toggle now noted for
   Managers as well as Edges).
+- **Manager key registration authenticates with the admin KEY when it already
+  works** (`_register_manager_ssh_key`, `lib/nsx_manager.sh`). Previously it
+  always opened the session with the admin password via `sshpass`, so
+  `configure_ssh_keys.sh --type manager --root` prompted for the admin password
+  even on clusters whose admin key was already registered — pointless, since the
+  key alone can carry the change (only the target user's `<confirm_pass>` feeds
+  the CLI `password` param). Now the registrar prefers a BatchMode key session
+  (the same transport `admin_cmd`/`set ssh root-login` already use in the field,
+  incl. 4.1.2) and falls back to `sshpass`+`NSX_PASS` only for bootstrap (no admin
+  key yet). `ask_cluster_creds` gained `[need_admin] [need_root]` (default
+  true/true) and `configure_ssh_keys.sh` now asks the admin password ONLY when a
+  host still needs its admin key registered, and the root password ONLY with
+  `--root`.
 
 ### Fixed
 - **`ADMIN_KEY`/`ROOT_KEY` never pointed at the registered device key.** They

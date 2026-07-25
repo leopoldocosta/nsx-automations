@@ -65,12 +65,36 @@ _register_manager_ssh_key(){
   #   4. real BatchMode login verification at the end.
   local -a _to=()
   command -v timeout >/dev/null 2>&1 && _to=(timeout 30)
-  local -a _ssh_base=(ssh
-    -o StrictHostKeyChecking=no
-    -o UserKnownHostsFile=/dev/null
-    -o ConnectTimeout=10
-    -o LogLevel=ERROR
-    "${auth_user}@${ip}")
+
+  # Transport: prefer the admin KEY when it ALREADY works — then no admin
+  # password is needed to open the session (only <confirm_pass> feeds the CLI
+  # 'password' param). Fall back to NSX_PASS via sshpass for the bootstrap case
+  # (no admin key registered yet). This is what lets the caller skip the admin
+  # password prompt once the admin key is in place.
+  local priv="${SSH_PRIV:-${HOME}/.ssh/id_rsa}"
+  local auth_via_key=false
+  if [[ -f "${priv}" ]] && ssh -i "${priv}" -o BatchMode=yes -o IdentitiesOnly=yes \
+       -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+       -o ConnectTimeout=5 -o LogLevel=ERROR "${auth_user}@${ip}" "exit" </dev/null &>/dev/null; then
+    auth_via_key=true
+  fi
+
+  local -a _ssh_base
+  if "${auth_via_key}"; then
+    _ssh_base=(ssh -i "${priv}" -o BatchMode=yes -o IdentitiesOnly=yes
+      -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+      -o ConnectTimeout=10 -o LogLevel=ERROR "${auth_user}@${ip}")
+  else
+    _ssh_base=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+      -o ConnectTimeout=10 -o LogLevel=ERROR "${auth_user}@${ip}")
+  fi
+
+  # Run one registration command with the chosen transport (key => no sshpass,
+  # so an empty NSX_PASS is fine). Reads locals via bash dynamic scope.
+  _run_reg(){
+    if "${auth_via_key}"; then "${_to[@]}" "${_ssh_base[@]}" "$@"
+    else _sshpass_safe NSX_PASS "${_to[@]}" "${_ssh_base[@]}" "$@"; fi
+  }
 
   # QUOTING: nsxcli tokenizes with Python shlex ("No closing quotation" is
   # its error) and does NOT process backslash escapes inside quotes — pick
@@ -84,7 +108,7 @@ _register_manager_ssh_key(){
 
   result=""
   if "${inline_ok}"; then
-    result="$(_sshpass_safe NSX_PASS "${_to[@]}" "${_ssh_base[@]}" \
+    result="$(_run_reg \
       "set user ${target_user} ssh-keys label ${label} type ${key_type} value ${pub_val} password ${q}${confirm_pass}${q}" \
       </dev/null 2>&1)" || rc=$?
 
@@ -95,7 +119,7 @@ _register_manager_ssh_key(){
     fi
   fi
   if ! "${inline_ok}" || echo "${result}" | grep -qiE "command not found|syntax error|no closing quotation"; then
-    result="$(_sshpass_safe NSX_PASS "${_to[@]}" "${_ssh_base[@]}" \
+    result="$(_run_reg \
       "set user ${target_user} ssh-keys label ${label} type ${key_type} value ${pub_val}" \
       <<<"${confirm_pass}" 2>&1 || true)"
   fi
@@ -479,16 +503,28 @@ reboot_one_manager_by_ip(){
 #   CLUSTER_ROOT_PASS_<i>
 # ---------------------------------------------------------------------------
 ask_cluster_creds(){
-  local idx="${1:?usage: ask_cluster_creds <idx>}"
+  local idx="${1:?usage: ask_cluster_creds <idx> [need_admin] [need_root]}"
+  # Only prompt for the passwords actually needed. When the admin key already
+  # works, the admin password is not used (the registrar connects with the key),
+  # so asking for it makes no sense — pass need_admin=false to skip it. Defaults
+  # to true/true for backward compatibility.
+  local need_admin="${2:-true}"
+  local need_root="${3:-true}"
   local label="${CLUSTER_LABELS[$idx]:-cluster-${idx}}"
   local user_var="CLUSTER_ADMIN_USER_${idx}"
   local user="${!user_var:-admin}"
 
   echo ""
   echo "--- Credentials for cluster [${label}] (admin user: ${user}) ---"
-  local apass rpass
-  IFS= read -rsp "  Admin password for ${user}@${label}: " apass </dev/tty; printf '\n' >/dev/tty
-  IFS= read -rsp "  Root password for ${label}: "          rpass </dev/tty; printf '\n' >/dev/tty
+  local apass="" rpass=""
+  if [[ "${need_admin}" == "true" ]]; then
+    IFS= read -rsp "  Admin password for ${user}@${label}: " apass </dev/tty; printf '\n' >/dev/tty
+  else
+    echo "  Admin password: skipped (admin key already works)."
+  fi
+  if [[ "${need_root}" == "true" ]]; then
+    IFS= read -rsp "  Root password for ${label}: " rpass </dev/tty; printf '\n' >/dev/tty
+  fi
   declare -g "CLUSTER_ADMIN_PASS_${idx}=${apass}"
   declare -g "CLUSTER_ROOT_PASS_${idx}=${rpass}"
   log "  Credentials stored for [${label}]."

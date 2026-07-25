@@ -258,24 +258,32 @@ case "${TYPE}" in
     # registration. If the key already opens every host, no password is asked.
     # With --root we always need credentials (root login is gated, so the root
     # key cannot be cheaply pre-checked — registration is idempotent).
-    declare -a NEED=()
+    declare -a NEED=() NEED_ADMIN=()
     for (( i=0; i<CLUSTER_COUNT; i++ )); do
       cuser="$(cluster_admin_user "${i}")"
       read -r -a hosts <<<"$(cluster_hosts "${i}")"
-      pending=false
+      admin_pending=false
       for ip in "${hosts[@]}"; do
         if _key_works "${cuser}" "${ip}"; then
           log_ok "${ip}: admin key already works for ${cuser}."
         else
-          pending=true
+          admin_pending=true
         fi
       done
-      "${REGISTER_ROOT}" && pending=true
-      NEED[$i]="${pending}"
+      NEED_ADMIN[$i]="${admin_pending}"
+      # Prompt/process this cluster if admin registration is pending OR --root.
+      if [[ "${admin_pending}" == "true" ]] || "${REGISTER_ROOT}"; then
+        NEED[$i]=true
+      else
+        NEED[$i]=false
+      fi
     done
 
     for (( i=0; i<CLUSTER_COUNT; i++ )); do
-      [[ "${NEED[$i]}" == "true" ]] && ask_cluster_creds "${i}"
+      [[ "${NEED[$i]}" == "true" ]] || continue
+      # Ask ONLY the passwords that will actually be used: admin only when a host
+      # still needs the admin key registered; root only with --root.
+      ask_cluster_creds "${i}" "${NEED_ADMIN[$i]}" "${REGISTER_ROOT}"
     done
 
     for (( i=0; i<CLUSTER_COUNT; i++ )); do
