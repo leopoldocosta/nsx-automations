@@ -529,7 +529,14 @@ ask_cluster_creds(){
   fi
   declare -g "CLUSTER_ADMIN_PASS_${idx}=${apass}"
   declare -g "CLUSTER_ROOT_PASS_${idx}=${rpass}"
-  log "  Credentials stored for [${label}]."
+  # In-memory only, for the duration of this run — consistent with the
+  # orchestrator's "nothing is stored here". Name what was actually captured
+  # (admin may have been skipped when its key already works), and avoid the word
+  # "stored", which reads like it was persisted to disk. It never is.
+  local _got=""
+  [[ -n "${apass}" ]] && _got="admin"
+  [[ -n "${rpass}" ]] && _got="${_got:+${_got}+}root"
+  log "  [${label}]: ${_got:-no} password(s) held in memory for this run only (never written to disk)."
 }
 
 # with_cluster_creds <idx> <fn> [args...]
