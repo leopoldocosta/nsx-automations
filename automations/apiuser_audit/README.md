@@ -117,7 +117,10 @@ Whole fleet, from the orchestrator (unified report at the end):
 
 - Human report + `NEEDS ATTENTION` list + an **EVIDENCE** block (per manager:
   the accounting-file mtimes it read, and with `--scan-logs` the auth/audit
-  activity — match count + first/last matching line). `tee`'d to
+  activity). To stay readable, the inline block lists only files that actually
+  **matched** (with their first/last line) and collapses the rest — files with
+  0 matches and rotations skipped as older than the window — into a one-line
+  tally; the full untrimmed list is in the evidence dump. `tee`'d to
   `logs/apiuser_audit_<ts>.txt` and wrapped in the fan-out report sentinels
   (so it appears in the unified fleet report).
 - Machine-readable `logs/apiuser_audit_<ts>.csv` (one row per manager).

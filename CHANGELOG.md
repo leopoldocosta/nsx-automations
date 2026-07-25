@@ -63,7 +63,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   `zcat -f` and bounded to files touched since the window (`find -newermt`),
   recording per file the match count + first/last matching line. The heavy read
   stays on the manager; only the evidence crosses the wire. Doubles as the recon
-  that anchors the full v2 NSX-audit field parsing.
+  that anchors the full v2 NSX-audit field parsing. The inline EVIDENCE block
+  shows only files that actually matched (with their first/last line) and
+  collapses the rest (0-match files and rotations older than the window) into a
+  one-line tally — the full untrimmed list stays in the evidence dump — so a
+  `--scan-logs` run no longer floods the terminal with hundreds of `SKIP(old)`
+  lines.
 - **Unified fleet report at the end of a multi-DC fan-out.** After the
   `summary.csv` table, `bin/run_across_datacenters.sh` now lifts each DC's final
   report out of its `run.log` and prints one combined report (saved to

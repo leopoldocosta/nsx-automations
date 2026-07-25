@@ -176,6 +176,36 @@ _section_next(){
 }
 
 # ---------------------------------------------------------------------------
+# _render_scan_evidence <scan_section>
+#   Trim a --scan-logs section (AUTHLOG / NSXAUDIT) for the *human report*:
+#   print only files that actually MATCHED (with their first/last line) and a
+#   one-line tally of the rest. Files with 0 matches and SKIP(old) entries are
+#   collapsed into the tally — the full untrimmed list stays in the evidence
+#   dump on disk. Output is pre-indented (8 spaces) to slot under the manager.
+# ---------------------------------------------------------------------------
+_render_scan_evidence(){
+  local section="$1"
+  [[ -n "${section}" ]] || { printf '        (nothing scanned)\n'; return; }
+  awk '
+    /^[[:space:]]*$/ { next }
+    /^FILE / {
+      total++; n=$NF; sub(/^matches=/,"",n)
+      if (n+0 > 0) { matched++; printing=1; print "        " $0 }
+      else         { zero++;    printing=0 }
+      next
+    }
+    /^SKIP\(old\)/ { skipped++; printing=0; next }
+    { if (printing) print "        " $0 }
+    END {
+      if (matched+0 == 0) printf "        no matches "
+      else                printf "        "
+      printf "(%d file(s) scanned: %d matched, %d empty, %d skipped as older than window — full list in evidence dump)\n", \
+             total+0, matched+0, zero+0, skipped+0
+    }
+  ' <<<"${section}"
+}
+
+# ---------------------------------------------------------------------------
 # _epoch_of_last_line <last -F line>
 #   `last -F` prints e.g.:  "apiuser pts/0 10.0.0.5 Wed Jul 24 13:05:11 2026 - ..."
 #   The login timestamp is a fixed 5-field run ending in the year. Extract it
@@ -464,13 +494,13 @@ print_report(){
       if "${SCAN_LOGS}"; then
         printf '      auth.log activity (files touched since the window):\n'
         if [[ -n "${M_AUTH_EV[${ip}]:-}" ]]; then
-          while IFS= read -r _l; do [[ -n "${_l}" ]] && printf '        %s\n' "${_l}"; done <<<"${M_AUTH_EV[${ip}]}"
+          _render_scan_evidence "${M_AUTH_EV[${ip}]}"
         else
           printf '        (no auth.log touched in window)\n'
         fi
         printf '      NSX audit-log activity (candidate paths):\n'
         if [[ -n "${M_AUDIT_EV[${ip}]:-}" ]]; then
-          while IFS= read -r _l; do [[ -n "${_l}" ]] && printf '        %s\n' "${_l}"; done <<<"${M_AUDIT_EV[${ip}]}"
+          _render_scan_evidence "${M_AUDIT_EV[${ip}]}"
         else
           printf '        (no candidate audit log matched in window)\n'
         fi
