@@ -8,6 +8,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Live per-device progress during a fan-out.** `bin/run_across_datacenters.sh`
+  used to redirect each DC's remote output straight to `run.log`, so a long
+  per-device pass showed a black screen until the DC finished (e.g. ~100s for
+  edge hardware inventory). It now streams the automation's **progress ticks** to
+  the terminal in real time — prefixed with the DC label — while the full output
+  still lands in `run.log` verbatim; the ssh exit code is read from
+  `PIPESTATUS[0]`. Automations opt in via a new `log_progress` helper
+  (`lib/common.sh`) that tags lines with `NSX_PROGRESS_TAG`; those that don't
+  emit ticks behave exactly as before. `edge_hardware_inventory` is wired first:
+  it emits `edge i/N (pct%) <ip> — <verdict>` per node, and its `tee` is
+  line-buffered (`stdbuf -oL`, with a plain-`tee` fallback) so ticks are not held
+  in a stdio block buffer on the way out.
 - **`apiuser_audit` — service-account audit across all NSX-T Managers**
   (`automations/apiuser_audit/`). Read-only, runs as root, fleet-wide via the
   fan-out (unified report via `report_wrap`). **v1** validates, per manager,

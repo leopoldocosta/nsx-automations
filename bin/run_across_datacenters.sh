@@ -55,6 +55,12 @@
 #   <out>/summary.csv             dc,start,end,duration_s,exit_code,log_path
 #   <out>/<dc-label>/run.log      full stdout+stderr of the remote run
 #   <out>/<dc-label>/logs/...     rsync of the remote automation's logs/ (unless --no-pull-logs)
+#
+# Live progress:
+#   While a DC runs, any progress ticks the remote automation emits (lines tagged
+#   NSX_PROGRESS_TAG via lib/common.sh:log_progress) are streamed to the terminal
+#   in real time, prefixed with the DC label — so a long per-device pass is no
+#   longer a black screen. The full remote output still goes to run.log verbatim.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -182,6 +188,15 @@ run_one_dc(){
   printf -v remote_cmd 'cd %q && ./automations/%q %s' \
     "${repo}" "${AUTOMATION}" "$(_quote_args "${REMOTE_ARGS[@]}")"
 
+  # Stream the automation's progress ticks (log_progress -> NSX_PROGRESS_TAG) to
+  # the operator's terminal in real time, while the FULL stdout+stderr is still
+  # captured verbatim to run.log. Automations that don't emit progress stream
+  # nothing (unchanged silent-until-done behavior). The tee is line-buffered so
+  # ticks are not held in a block buffer; ssh's own exit code is read from
+  # PIPESTATUS[0] (not the pipeline tail, which is sed/grep).
+  local -a tee_cmd=(tee)
+  command -v stdbuf >/dev/null 2>&1 && tee_cmd=(stdbuf -oL tee)
+  set +e
   ssh -i "${key}" \
       -o BatchMode=yes \
       -o ForwardAgent=no \
@@ -190,8 +205,13 @@ run_one_dc(){
       -o ConnectTimeout=15 \
       -o ServerAliveInterval=30 \
       "${user}@${host}" \
-      "bash -lc $(printf '%q' "${remote_cmd}")" \
-      > "${run_log}" 2>&1 || rc=$?
+      "bash -lc $(printf '%q' "${remote_cmd}")" 2>&1 \
+    | "${tee_cmd[@]}" "${run_log}" \
+    | grep --line-buffered -F "${NSX_PROGRESS_TAG}" \
+    | sed -u "s|^|  [${label}] |"
+  local -a _pstat=( "${PIPESTATUS[@]}" )
+  set -e
+  rc="${_pstat[0]}"
 
   end_s="$(date +%s)"
   dur=$(( end_s - start_s ))

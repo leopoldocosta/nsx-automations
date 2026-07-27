@@ -242,6 +242,12 @@ aggregated_logs/<YYYYMMDD_HHMMSS>/
     └── ...
 ```
 
+While a DC runs, any **progress ticks** the automation emits (via
+`lib/common.sh:log_progress`, tagged `NSX_PROGRESS_TAG`) are streamed to the
+terminal in real time, prefixed with the DC label — so a long per-device pass is
+not a black screen. The full remote output is still captured to `run.log`
+verbatim; automations that emit no ticks stream nothing (as before).
+
 ## `datacenters.conf` schema
 
 ```ini

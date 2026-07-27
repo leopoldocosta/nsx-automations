@@ -105,6 +105,14 @@ log()      { printf '%s[%s]%s %s\n'           "${C_CYAN}"    "$(date '+%F %T')" 
 log_ok()   { printf '%s[%s] [OK]%s   %s\n'    "${C_GREEN}"   "$(date '+%F %T')" "${C_RESET}" "$*"; }
 log_warn() { printf '%s[%s] [WARN]%s %s\n'    "${C_YELLOW}"  "$(date '+%F %T')" "${C_RESET}" "$*"; }
 
+# Progress ticks — one concise, greppable line per unit of work (e.g. per edge).
+# Tagged with NSX_PROGRESS_TAG (a plain, regex-free literal) so
+# bin/run_across_datacenters.sh can stream JUST these lines to the operator's
+# terminal in real time while the full stdout still lands in run.log. Automations
+# opt in by calling it; those that don't simply stream nothing (unchanged).
+: "${NSX_PROGRESS_TAG:=[PROGRESS]}"
+log_progress() { printf '%s%s%s [%s] %s\n' "${C_BLUE}" "${NSX_PROGRESS_TAG}" "${C_RESET}" "$(date '+%H:%M:%S')" "$*"; }
+
 # ---------------------------------------------------------------------------
 # Multi-DC report aggregation sentinels
 #

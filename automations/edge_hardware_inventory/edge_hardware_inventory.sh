@@ -493,16 +493,30 @@ main(){
   CSV_FILE="${LOG_DIR}/edge_hw_report_$(date '+%Y%m%d_%H%M%S').csv"
   NIC_CSV_FILE="${LOG_DIR}/edge_nic_report_$(date '+%Y%m%d_%H%M%S').csv"
   LOG_FILE="${LOG_DIR}/edge_hw_run_$(date '+%Y%m%d_%H%M%S').log"
-  exec > >(tee -a "${LOG_FILE}") 2>&1
+  # Line-buffer the tee so progress ticks reach the SSH channel (and the fan-out
+  # orchestrator) as each line is written, instead of being held in tee's 4-8 KB
+  # stdio block buffer until the run ends. Falls back to a plain tee where
+  # stdbuf is unavailable (progress still lands in the log, just less live).
+  if command -v stdbuf >/dev/null 2>&1; then
+    exec > >(stdbuf -oL tee -a "${LOG_FILE}") 2>&1
+  else
+    exec > >(tee -a "${LOG_FILE}") 2>&1
+  fi
 
   log_banner "Edge Hardware Inventory"
   log "Loaded ${#HOST_IPS[@]} Edge Node(s): ${HOST_IPS[*]}"
 
   local failed_nodes=() ip
+  local total="${#HOST_IPS[@]}" i=0 pct
   for ip in "${HOST_IPS[@]}"; do
+    i=$(( i + 1 ))
+    pct=$(( i * 100 / total ))
     log "--- ${ip} ---"
+    log_progress "edge ${i}/${total} (${pct}%) ${ip} — collecting…"
     collect_node_info "${ip}" || failed_nodes+=("${ip}")
+    log_progress "edge ${i}/${total} (${pct}%) ${ip} — ${NODE_VERDICT[${ip}]:-ERROR} (${NODE_HOSTNAME[${ip}]:-N/A})"
   done
+  log_progress "all ${total} edge(s) done — building report"
 
   (( ${#failed_nodes[@]} > 0 )) && log_warn "Nodes with errors: ${failed_nodes[*]}"
 

@@ -70,6 +70,12 @@ is present does it fall back to prompting once (interactive, TTY-backed runs).
 
 ## Output
 
+While it runs it prints a **progress tick per Edge** — `edge i/N (pct%) <ip> —
+<verdict>` — so a fleet pass is not a silent wait. Under the fan-out
+(`bin/run_across_datacenters.sh`) those ticks are streamed live to the
+orchestrator terminal (prefixed with the DC label); the full log still lands in
+`run.log`.
+
 - `logs/edge_hw_run_YYYYMMDD_HHMMSS.log`     — full execution log
 - `logs/edge_hw_report_YYYYMMDD_HHMMSS.txt`  — human-readable report:
   hardware table, CPU table, CPU-model grouping, **NIC inventory (per node)**,
