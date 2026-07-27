@@ -114,6 +114,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   unchanged (NIC data is supplementary, like CPU). Note: a bare-metal Edge's
   datapath is DPDK; EDP proper is the ESXi transport-node mode — the NIC
   model/HCL entry is what carries across.
+- **`edge_hardware_inventory` NIC report: friendly names + an EDP hint.** A small
+  curated `[vendor:device]` table (`NIC_DB`) annotates each NIC with a readable
+  model when the on-box `pci.ids` is too old to name it (e.g. Intel E810 that
+  lspci shows only as `Device`) and with an **EDP hint** (`yes`/`yes*`/`no`/`-`/
+  `?`) to speed the BCG lookup. The hint is a heuristic, not a verdict — the
+  report header says so and points to the BCG; the raw lspci model is still kept.
+  `edge_nic_report_<ts>.csv` gains `friendly,edp_hint` columns.
 - New library `lib/nsx_api.sh`: NSX Manager/Policy REST helpers — safe Basic-Auth
   curl (credentials never reach `ps`; any special character accepted via raw
   base64), GET/PATCH, cursor pagination, LB-service `realization_id` resolution,

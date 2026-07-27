@@ -6,8 +6,9 @@ Collects, for each bare-metal NSX-T Edge Node, in a single root-SSH pass:
 - **CPU identity / topology** (model, sockets, cores/socket, threads/core,
   total vCPU, max clock) via `lscpu` + `dmidecode -t processor`;
 - **NIC identity** (model, `[vendor:device]` PCI id, bound driver, OEM
-  subsystem) via `lspci -nnk` — so EDP capability can be decided afterwards by
-  cross-checking against the Broadcom Compatibility Guide (see *NICs / EDP*).
+  subsystem) via `lspci -nnk`, annotated with a curated friendly name + an
+  **EDP hint** — so EDP capability can be decided afterwards by cross-checking
+  against the Broadcom Compatibility Guide (see *NICs / EDP*).
 
 ## Why
 
@@ -84,7 +85,8 @@ orchestrator terminal (prefixed with the DC label); the full log still lands in
   (one row per node):
   `ip,hostname,nsx_version,manufacturer,model,service_tag,baseboard_serial,cpu_model,sockets,cores_per_socket,threads_per_core,total_vcpu,max_mhz,dmi_max_speed,verdict,error`
 - `logs/edge_nic_report_YYYYMMDD_HHMMSS.csv`  — NIC inventory, **one row per
-  NIC**: `ip,hostname,pci_addr,pci_id,model,driver,subsystem`
+  NIC**: `ip,hostname,pci_addr,pci_id,model,friendly,edp_hint,driver,subsystem`
+  (`friendly` + `edp_hint` come from the local chipset table — see *NICs / EDP*)
 - `logs/edge_cpu_raw_<hostname>.txt`          — per-node full `lscpu`,
   grepped `dmidecode -t processor`, and full `lspci -nnk` dump, for reference /
   debugging
@@ -103,6 +105,23 @@ matching the model + `[vendor:device]` in the
 [Broadcom Compatibility Guide](https://compatibilityguide.broadcom.com/search?program=io&persona=live)
 under the **Enhanced Data Path – Interrupt mode** filter, at the target ESX
 version.
+
+To make that lookup faster the report annotates each NIC from a **small curated
+chipset table** (`NIC_DB` in the script):
+
+- **Friendly name** — a readable model when the on-box `pci.ids` is too old to
+  name the device (e.g. an Intel E810 that lspci shows only as `Device`). The
+  raw lspci `model` is still kept (report `[vendor:device]`, CSV `model` column).
+- **`EDP` hint** — a **heuristic**, not a verdict: `yes` (EDP/ENS-capable),
+  `yes*` (capable but with a caveat — older / 10G / interrupt-mode only), `no`
+  (not EDP-Standard), `-` (mgmt/1G, not a datapath NIC), `?` (id not in the
+  table — check by hand). **Always confirm** the exact driver + firmware + ESX
+  combination in the BCG; the table is a shortlist, not authority. Unknown ids
+  fall back to the raw model and `?`.
+
+The **datapath** NICs are the ones bound to `drv=vfio-pci` (the NSX DPDK
+fastpath); management/1G ports stay on their kernel driver (`tg3`, `igb`, …).
+Add a new chipset by editing `NIC_DB` (`[vendor:device]="Friendly name|hint"`).
 
 > Note on terminology: a **bare-metal Edge's** datapath is **DPDK** (fastpath
 > NICs bind to `vfio-pci`); *EDP (Enhanced Data Path)* proper is the **ESXi

@@ -122,6 +122,47 @@ _normalize_nics(){
 }
 
 # ---------------------------------------------------------------------------
+# NIC_DB — curated [vendor:device] -> "friendly name|edp_hint" for NICs commonly
+# seen on NSX Edge datapaths. Two jobs:
+#   1. friendly name  — fills in a readable model when the on-box pci.ids is too
+#      old to name the device (e.g. E810 shows up only as "Device").
+#   2. edp_hint        — a HEURISTIC from THIS table only (yes / yes* / no / -):
+#         yes  = EDP/ENS-capable         yes* = capable but caveat (older / 10G /
+#                                                interrupt-mode only)
+#         no   = not EDP-Standard        -    = mgmt/1G, not a datapath NIC
+#      It is a hint, not a verdict — always confirm the exact driver+firmware+ESX
+#      combo in the Broadcom Compatibility Guide (Enhanced Data Path filter).
+# Unknown ids fall back to the lspci model and an edp_hint of "?".
+# ---------------------------------------------------------------------------
+declare -A NIC_DB=(
+  [8086:159b]="Intel E810-XXV (2x25G SFP)|yes"
+  [8086:159a]="Intel E810-XXV (2x25G SFP)|yes"
+  [8086:1592]="Intel E810-C (QSFP)|yes"
+  [8086:1593]="Intel E810-C (QSFP)|yes"
+  [8086:1572]="Intel X710 (10G SFP+)|yes*"
+  [8086:1574]="Intel XL710 QDA (40G)|yes*"
+  [8086:1583]="Intel XL710 (40G QSFP)|yes*"
+  [8086:1584]="Intel XL710 (40G QSFP)|yes*"
+  [8086:1521]="Intel I350 (1G)|-"
+  [8086:1533]="Intel I210 (1G)|-"
+  [15b3:101d]="Mellanox ConnectX-6 Dx|yes"
+  [15b3:101f]="Mellanox ConnectX-6 Lx|yes"
+  [15b3:1021]="Mellanox ConnectX-7|yes"
+  [15b3:1019]="Mellanox ConnectX-5 Ex|yes"
+  [15b3:1017]="Mellanox ConnectX-5|yes"
+  [15b3:1015]="Mellanox ConnectX-4 Lx|no"
+  [15b3:1013]="Mellanox ConnectX-4|no"
+  [14e4:165f]="Broadcom BCM5720 (1G)|-"
+  [14e4:16d7]="Broadcom BCM57414 (25G)|yes*"
+  [14e4:1750]="Broadcom BCM57508 (100G)|yes*"
+)
+
+# _nic_name <pci_id> <fallback_model> — friendly name if known, else the raw model.
+_nic_name(){ local e="${NIC_DB[$1]:-}"; [[ -n "${e}" ]] && printf '%s' "${e%%|*}" || printf '%s' "$2"; }
+# _nic_edp <pci_id> — edp hint from the table, or "?" for an unknown id.
+_nic_edp(){  local e="${NIC_DB[$1]:-}"; [[ -n "${e}" ]] && printf '%s' "${e##*|}" || printf '%s' "?"; }
+
+# ---------------------------------------------------------------------------
 # collect_node_info <ip>
 # ---------------------------------------------------------------------------
 collect_node_info(){
@@ -390,6 +431,10 @@ print_report(){
     echo "${sep}"
     printf '  NIC INVENTORY (lspci -nnk) — cross-check model + [vendor:device]\n'
     printf '  against the Broadcom Compatibility Guide (EDP filter) to confirm EDP.\n'
+    printf '  EDP column is a HEURISTIC from a local chipset table — CONFIRM in the BCG:\n'
+    printf '    yes = EDP/ENS-capable   yes* = capable w/ caveat (older / 10G / interrupt)\n'
+    printf '    no  = not EDP-Standard   -   = mgmt/1G (n/a)   ?  = unknown id (check by hand)\n'
+    printf '  Datapath NICs are the ones bound to drv=vfio-pci (NSX DPDK fastpath).\n'
     echo "${sep}"
     echo ""
     local nip nics pci_addr pci_id nmodel drv subsys
@@ -402,8 +447,13 @@ print_report(){
       fi
       while IFS='|' read -r pci_addr pci_id nmodel drv subsys; do
         [[ -z "${pci_addr}" ]] && continue
-        printf '      %-8s  %-44s  [%s]  drv=%-10s  %s\n' \
-          "${pci_addr}" "${nmodel:-N/A}" "${pci_id:-N/A}" "${drv:--}" "${subsys:-}"
+        printf '      %-8s  %-26s  [%-9s]  EDP:%-4s  drv=%-9s  %s\n' \
+          "${pci_addr}" \
+          "$(_nic_name "${pci_id}" "${nmodel:-N/A}")" \
+          "${pci_id:-N/A}" \
+          "$(_nic_edp "${pci_id}")" \
+          "${drv:--}" \
+          "${subsys:-}"
       done <<< "${nics}"
     done
 
@@ -442,17 +492,18 @@ print_report(){
 
   # ---- NIC CSV side-output (one row per NIC, machine-readable) ----
   {
-    printf 'ip,hostname,pci_addr,pci_id,model,driver,subsystem\n'
+    printf 'ip,hostname,pci_addr,pci_id,model,friendly,edp_hint,driver,subsystem\n'
     local ip nics pci_addr pci_id nmodel drv subsys
     for ip in "${HOST_IPS[@]}"; do
       nics="${NODE_NICS[${ip}]:-}"
       [[ -z "${nics}" ]] && continue
       while IFS='|' read -r pci_addr pci_id nmodel drv subsys; do
         [[ -z "${pci_addr}" ]] && continue
-        # model / subsystem are quoted (may contain commas / parentheses).
-        printf '%s,%s,%s,%s,"%s",%s,"%s"\n' \
+        # model / friendly / subsystem are quoted (may contain commas / parentheses).
+        printf '%s,%s,%s,%s,"%s","%s",%s,%s,"%s"\n' \
           "${ip}" "${NODE_HOSTNAME[${ip}]:-}" "${pci_addr}" "${pci_id}" \
-          "${nmodel}" "${drv}" "${subsys}"
+          "${nmodel}" "$(_nic_name "${pci_id}" "${nmodel}")" "$(_nic_edp "${pci_id}")" \
+          "${drv}" "${subsys}"
       done <<< "${nics}"
     done
   } > "${NIC_CSV_FILE}"
