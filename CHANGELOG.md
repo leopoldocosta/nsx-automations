@@ -89,6 +89,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
   is written. The hardware verdict is unchanged (CPU data is supplementary).
   Supersedes the never-committed standalone `edge_cpu_inventory` (folded in to
   avoid two near-identical edge automations).
+- **`edge_hardware_inventory` now also inventories the NICs.** `lspci -nnk` is
+  collected in the SAME root round-trip (no extra SSH); each network/ethernet
+  controller is parsed locally into model, `[vendor:device]` PCI id, bound
+  driver (incl. `vfio-pci` for DPDK-claimed datapath NICs) and OEM subsystem.
+  The report gains a per-node **NIC INVENTORY** section and a new
+  `edge_nic_report_<ts>.csv` (one row per NIC:
+  `ip,hostname,pci_addr,pci_id,model,driver,subsystem`); the per-node raw dump
+  now also carries the full `lspci -nnk`. This is raw inventory to decide **EDP**
+  capability afterwards by matching model + `[vendor:device]` in the Broadcom
+  Compatibility Guide (Enhanced Data Path filter) — the hardware verdict is
+  unchanged (NIC data is supplementary, like CPU). Note: a bare-metal Edge's
+  datapath is DPDK; EDP proper is the ESXi transport-node mode — the NIC
+  model/HCL entry is what carries across.
 - New library `lib/nsx_api.sh`: NSX Manager/Policy REST helpers — safe Basic-Auth
   curl (credentials never reach `ps`; any special character accepted via raw
   base64), GET/PATCH, cursor pagination, LB-service `realization_id` resolution,

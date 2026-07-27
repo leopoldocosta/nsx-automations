@@ -4,7 +4,10 @@ Collects, for each bare-metal NSX-T Edge Node, in a single root-SSH pass:
 
 - **Chassis model** and **Service Tag** (Dell PowerEdge) via `dmidecode`;
 - **CPU identity / topology** (model, sockets, cores/socket, threads/core,
-  total vCPU, max clock) via `lscpu` + `dmidecode -t processor`.
+  total vCPU, max clock) via `lscpu` + `dmidecode -t processor`;
+- **NIC identity** (model, `[vendor:device]` PCI id, bound driver, OEM
+  subsystem) via `lspci -nnk` — so EDP capability can be decided afterwards by
+  cross-checking against the Broadcom Compatibility Guide (see *NICs / EDP*).
 
 ## Why
 
@@ -15,8 +18,8 @@ both across the fleet in one pass, with no out-of-band BMC required.
 
 ## Verdict logic
 
-The verdict is **hardware-based** (the CPU columns are supplementary data and
-never change it):
+The verdict is **hardware-based** (the CPU **and NIC** columns are supplementary
+data and never change it):
 
 | Condition | Verdict |
 |---|---|
@@ -69,11 +72,38 @@ is present does it fall back to prompting once (interactive, TTY-backed runs).
 
 - `logs/edge_hw_run_YYYYMMDD_HHMMSS.log`     — full execution log
 - `logs/edge_hw_report_YYYYMMDD_HHMMSS.txt`  — human-readable report:
-  hardware table, CPU table, CPU-model grouping, and nodes needing attention
-- `logs/edge_hw_report_YYYYMMDD_HHMMSS.csv`  — machine-readable inventory:
+  hardware table, CPU table, CPU-model grouping, **NIC inventory (per node)**,
+  and nodes needing attention
+- `logs/edge_hw_report_YYYYMMDD_HHMMSS.csv`  — machine-readable inventory
+  (one row per node):
   `ip,hostname,nsx_version,manufacturer,model,service_tag,baseboard_serial,cpu_model,sockets,cores_per_socket,threads_per_core,total_vcpu,max_mhz,dmi_max_speed,verdict,error`
-- `logs/edge_cpu_raw_<hostname>.txt`          — per-node full `lscpu` +
-  grepped `dmidecode -t processor` dump, for reference / debugging
+- `logs/edge_nic_report_YYYYMMDD_HHMMSS.csv`  — NIC inventory, **one row per
+  NIC**: `ip,hostname,pci_addr,pci_id,model,driver,subsystem`
+- `logs/edge_cpu_raw_<hostname>.txt`          — per-node full `lscpu`,
+  grepped `dmidecode -t processor`, and full `lspci -nnk` dump, for reference /
+  debugging
+
+## NICs / EDP
+
+The report's **NIC INVENTORY** section (and `edge_nic_report_*.csv`) lists every
+network/ethernet controller `lspci -nnk` sees on the node: PCI address, model,
+the `[vendor:device]` numeric id, the OEM subsystem, and the **bound driver**
+(`mlx5_core`, `ice`, `tg3`, … or `vfio-pci` when the NIC is claimed by the
+DPDK datapath). `lspci` reports the device regardless of the bound driver, so
+datapath fastpath NICs still appear.
+
+This is **raw inventory, not a verdict** — decide EDP capability afterwards by
+matching the model + `[vendor:device]` in the
+[Broadcom Compatibility Guide](https://compatibilityguide.broadcom.com/search?program=io&persona=live)
+under the **Enhanced Data Path – Interrupt mode** filter, at the target ESX
+version.
+
+> Note on terminology: a **bare-metal Edge's** datapath is **DPDK** (fastpath
+> NICs bind to `vfio-pci`); *EDP (Enhanced Data Path)* proper is the **ESXi
+> transport-node** N-VDS/VDS mode. What carries across both is the **NIC
+> model / HCL entry** — which is exactly what this section captures. If you
+> also need the ESXi transport-node NICs, that is a different target
+> (`esxcli`/`esxcfg-nics -e`), not covered by this Edge-node automation.
 
 ## Tunables
 
@@ -89,7 +119,9 @@ is present does it fall back to prompting once (interactive, TTY-backed runs).
 - Each Edge Node must allow root SSH from the jump host while the script runs
   (the script toggles it on/off via the admin CLI — same pattern as the other
   edge automations).
-- `dmidecode` and `lscpu` must be installed on the Edge (default on NSX Edge OS).
+- `dmidecode`, `lscpu` and `lspci` (pciutils) must be installed on the Edge
+  (default on NSX Edge OS). If `lspci` is missing the NIC section is simply
+  empty — the rest of the report is unaffected.
 - For VM edges, expect `NOT_DELL` verdicts — `dmidecode` returns the hypervisor
   identity (`VMware, Inc.`), not the underlying ESXi host. `lscpu` still reports
   the CPU model exposed to the guest, so the CPU columns remain useful there.

@@ -12,9 +12,11 @@
 #                  dmidecode -s baseboard-serial-number (fallback only)
 #                  lscpu                                 (CPU model / topology)
 #                  dmidecode -t processor | grep -E "Version|Core|Thread|Speed"
+#                  lspci -nnk                            (NIC model/id/driver)
 #   5. Admin     : disable root SSH
-#   6. Final report: hardware table + CPU table + CPU-model grouping + CSV,
-#                    plus a per-node raw lscpu/dmidecode dump (edge_cpu_raw_*).
+#   6. Final report: hardware table + CPU table + CPU-model grouping +
+#                    NIC inventory + CSVs, plus a per-node raw
+#                    lscpu/dmidecode/lspci dump (edge_cpu_raw_*).
 #   7. Prompt to clear creds (default Y after 30s)
 #
 # Verdict per node (hardware — the CPU columns are supplementary data and do
@@ -50,6 +52,10 @@ declare -A NODE_HW_MANUFACTURER NODE_HW_MODEL NODE_HW_SERIAL NODE_HW_BASEBOARD
 declare -A NODE_CPU_MODEL NODE_CPU_SOCKETS NODE_CPU_CPS NODE_CPU_TPC
 declare -A NODE_CPU_TOTAL NODE_CPU_MAXMHZ NODE_CPU_DMISPEED NODE_RAWFILE
 declare -A NODE_VERDICT
+# NIC inventory (supplementary, like the CPU columns — never changes the
+# verdict). NODE_NICS[ip] holds one normalized NIC per line, pipe-delimited:
+#   pci_addr|pci_id|model|driver|subsystem
+declare -A NODE_NICS
 
 # ---------------------------------------------------------------------------
 # _clean <raw>
@@ -70,6 +76,49 @@ _clean(){
 _lscpu_get(){
   echo "$1" | grep -m1 -E "^$2:" | cut -d: -f2- | tr -d '\r' \
     | sed 's/^[[:space:]]*//' | xargs || true
+}
+
+# ---------------------------------------------------------------------------
+# _normalize_nics <full_lspci_nnk>
+#   Filters full `lspci -nnk` to network/ethernet controllers and emits one line
+#   per NIC, pipe-delimited:  pci_addr|pci_id|model|driver|subsystem
+#   - pci_id  : the [vendor:device] numeric id (the HCL/BCG match key)
+#   - model   : device description with the trailing [id] (rev ..) stripped
+#   - driver  : "Kernel driver in use" (mlx5_core / ice / vfio-pci / ...)
+#   Header lines start at column 0; continuation lines are indented (tab). Only
+#   blocks whose header is an Ethernet/Network controller are kept (show).
+# ---------------------------------------------------------------------------
+_normalize_nics(){
+  awk '
+    function flush(){
+      if (show && addr != "") printf "%s|%s|%s|%s|%s\n", addr, id, model, drv, subsys
+      addr=""; id=""; model=""; drv=""; subsys=""
+    }
+    /^[^[:space:]]/ {
+      flush()                                               # emit the previous block
+      show = ($0 ~ /Ethernet controller \[|Network controller \[/) ? 1 : 0
+      if (show) {
+        addr=$1
+        id=""; tmp=$0
+        while (match(tmp, /\[[0-9a-fA-F]{4}:[0-9a-fA-F]{4}\]/)) {
+          id=substr(tmp, RSTART+1, RLENGTH-2); tmp=substr(tmp, RSTART+RLENGTH)
+        }
+        m=$0
+        sub(/^[^ ]+ [^:]*: /, "", m)                        # drop "addr Class [xxxx]: "
+        sub(/ \[[0-9a-fA-F]{4}:[0-9a-fA-F]{4}\].*$/, "", m) # drop trailing [id] (rev ..)
+        model=m
+      }
+      next
+    }
+    show && /Subsystem:/ {
+      s=$0; sub(/^[[:space:]]*Subsystem: /, "", s)
+      sub(/ \[[0-9a-fA-F]{4}:[0-9a-fA-F]{4}\].*$/, "", s); subsys=s; next
+    }
+    show && /Kernel driver in use:/ {
+      d=$0; sub(/^.*Kernel driver in use: /, "", d); drv=d; next
+    }
+    END { flush() }
+  ' <<<"$1"
 }
 
 # ---------------------------------------------------------------------------
@@ -127,6 +176,12 @@ collect_node_info(){
     echo "----BASEBOARD----";dmidecode -s baseboard-serial-number 2>/dev/null || true
     echo "----LSCPU----";    lscpu 2>/dev/null || true
     echo "----DMIPROC----";  dmidecode -t processor 2>/dev/null | grep -E "Version|Core|Thread|Speed" || true
+    echo "----NICPCI----"
+    # Full lspci -nnk. Filtered to network/ethernet controllers and parsed
+    # locally by _normalize_nics (a single-quoted awk cannot live inside this
+    # single-quoted remote block). lspci sees the device regardless of the bound
+    # driver, so datapath NICs bound to DPDK (vfio-pci) still show up.
+    lspci -nnk 2>/dev/null || true
     echo "----END----"
   ' 2>/dev/null || true)"
 
@@ -144,7 +199,10 @@ collect_node_info(){
   serial="$(   echo "${hw_raw}" | awk '/^----SERIAL----$/,/^----BASEBOARD----$/' | sed '1d;$d')"
   baseboard="$(echo "${hw_raw}" | awk '/^----BASEBOARD----$/,/^----LSCPU----$/'  | sed '1d;$d')"
   lscpu_block="$(echo "${hw_raw}" | awk '/^----LSCPU----$/,/^----DMIPROC----$/'  | sed '1d;$d')"
-  dmi_block="$(  echo "${hw_raw}" | awk '/^----DMIPROC----$/,/^----END----$/'    | sed '1d;$d')"
+  dmi_block="$(  echo "${hw_raw}" | awk '/^----DMIPROC----$/,/^----NICPCI----$/' | sed '1d;$d')"
+  local nic_block
+  nic_block="$(  echo "${hw_raw}" | awk '/^----NICPCI----$/,/^----END----$/'     | sed '1d;$d')"
+  NODE_NICS["${ip}"]="$(_normalize_nics "${nic_block}")"
 
   NODE_HW_MANUFACTURER["${ip}"]="$(_clean "${manuf}")"
   NODE_HW_MODEL["${ip}"]="$(       _clean "${model}")"
@@ -187,6 +245,8 @@ collect_node_info(){
     printf '\n===== lscpu =====\n%s\n' "${lscpu_block}"
     printf '\n===== dmidecode -t processor (Version|Core|Thread|Speed) =====\n%s\n' \
       "${dmi_block}"
+    printf '\n===== PCI devices (lspci -nnk) =====\n%s\n' \
+      "${nic_block}"
   } > "${raw_file}"
   NODE_RAWFILE["${ip}"]="${raw_file}"
 
@@ -319,6 +379,34 @@ print_report(){
       printf '  %3d node(s)  %s\n' "${count}" "${model}"
     done <<< "${uniq_models}"
 
+    # ---- NIC inventory (supplementary) ----
+    # The verdict is untouched: this block is raw NIC identity so EDP capability
+    # can be decided afterwards by cross-checking model + [vendor:device] against
+    # the Broadcom Compatibility Guide (Enhanced Data Path filter). Note that a
+    # bare-metal Edge's datapath is DPDK (fastpath NICs bind to vfio-pci), so
+    # "EDP" per se is the ESXi transport-node mode — the NIC *model/HCL* check is
+    # what carries across.
+    echo ""
+    echo "${sep}"
+    printf '  NIC INVENTORY (lspci -nnk) — cross-check model + [vendor:device]\n'
+    printf '  against the Broadcom Compatibility Guide (EDP filter) to confirm EDP.\n'
+    echo "${sep}"
+    echo ""
+    local nip nics pci_addr pci_id nmodel drv subsys
+    for nip in "${HOST_IPS[@]}"; do
+      printf '  %s (%s):\n' "${NODE_HOSTNAME[${nip}]:-N/A}" "${nip}"
+      nics="${NODE_NICS[${nip}]:-}"
+      if [[ -z "${nics}" ]]; then
+        printf '      (no NIC data — verdict=%s)\n' "${NODE_VERDICT[${nip}]:-ERROR}"
+        continue
+      fi
+      while IFS='|' read -r pci_addr pci_id nmodel drv subsys; do
+        [[ -z "${pci_addr}" ]] && continue
+        printf '      %-8s  %-44s  [%s]  drv=%-10s  %s\n' \
+          "${pci_addr}" "${nmodel:-N/A}" "${pci_id:-N/A}" "${drv:--}" "${subsys:-}"
+      done <<< "${nics}"
+    done
+
     echo ""
     echo "${sep}"
     echo "  END OF REPORT"
@@ -352,9 +440,27 @@ print_report(){
     done
   } > "${CSV_FILE}"
 
+  # ---- NIC CSV side-output (one row per NIC, machine-readable) ----
+  {
+    printf 'ip,hostname,pci_addr,pci_id,model,driver,subsystem\n'
+    local ip nics pci_addr pci_id nmodel drv subsys
+    for ip in "${HOST_IPS[@]}"; do
+      nics="${NODE_NICS[${ip}]:-}"
+      [[ -z "${nics}" ]] && continue
+      while IFS='|' read -r pci_addr pci_id nmodel drv subsys; do
+        [[ -z "${pci_addr}" ]] && continue
+        # model / subsystem are quoted (may contain commas / parentheses).
+        printf '%s,%s,%s,%s,"%s",%s,"%s"\n' \
+          "${ip}" "${NODE_HOSTNAME[${ip}]:-}" "${pci_addr}" "${pci_id}" \
+          "${nmodel}" "${drv}" "${subsys}"
+      done <<< "${nics}"
+    done
+  } > "${NIC_CSV_FILE}"
+
   log "Report saved to: ${REPORT_FILE}"
   log "CSV    saved to: ${CSV_FILE}"
-  log "Per-node raw lscpu/dmidecode dumps: ${LOG_DIR}/edge_cpu_raw_*.txt"
+  log "NIC CSV saved to: ${NIC_CSV_FILE}"
+  log "Per-node raw lscpu/dmidecode/NIC dumps: ${LOG_DIR}/edge_cpu_raw_*.txt"
 }
 
 # ---------------------------------------------------------------------------
@@ -385,6 +491,7 @@ main(){
 
   REPORT_FILE="${LOG_DIR}/edge_hw_report_$(date '+%Y%m%d_%H%M%S').txt"
   CSV_FILE="${LOG_DIR}/edge_hw_report_$(date '+%Y%m%d_%H%M%S').csv"
+  NIC_CSV_FILE="${LOG_DIR}/edge_nic_report_$(date '+%Y%m%d_%H%M%S').csv"
   LOG_FILE="${LOG_DIR}/edge_hw_run_$(date '+%Y%m%d_%H%M%S').log"
   exec > >(tee -a "${LOG_FILE}") 2>&1
 
