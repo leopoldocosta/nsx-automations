@@ -163,6 +163,43 @@ _nic_name(){ local e="${NIC_DB[$1]:-}"; [[ -n "${e}" ]] && printf '%s' "${e%%|*}
 _nic_edp(){  local e="${NIC_DB[$1]:-}"; [[ -n "${e}" ]] && printf '%s' "${e##*|}" || printf '%s' "?"; }
 
 # ---------------------------------------------------------------------------
+# _nic_rollup <NODE_NICS block>
+#   Collapses a node's per-NIC lines into a compact, spreadsheet-friendly
+#   one-cell-each summary. Emits three pipe-separated fields:
+#     datapath_nics | other_nics | edp_datapath
+#   - datapath_nics: NICs bound to vfio-pci (the NSX DPDK fastpath), grouped by
+#     friendly name as "<ports>x <name>" (ports = PCI functions), "; "-joined.
+#   - other_nics   : everything else (mgmt/kernel-bound), same format.
+#   - edp_datapath : the distinct EDP hints of the datapath NICs, "/"-joined
+#     (e.g. "yes", "yes*", or "yes/no" when mixed). "none" if no datapath NIC.
+#   Grouping is done in awk so friendly names (with spaces/parens) are safe keys.
+# ---------------------------------------------------------------------------
+_nic_rollup(){
+  local block="$1" pci_addr pci_id model drv subsys friendly edp grp resolved=""
+  while IFS='|' read -r pci_addr pci_id model drv subsys; do
+    [[ -z "${pci_addr}" ]] && continue
+    friendly="$(_nic_name "${pci_id}" "${model}")"
+    edp="$(_nic_edp "${pci_id}")"
+    [[ "${drv}" == *vfio-pci* ]] && grp="dp" || grp="ot"
+    resolved+="${grp}"$'\t'"${friendly}"$'\t'"${edp}"$'\n'
+  done <<< "${block}"
+  awk -F'\t' '
+    NF < 2 { next }
+    { key=$1 SUBSEP $2
+      if (!(key in c)) { order[++n]=key; name[key]=$2; grp[key]=$1 }
+      c[key]++
+      if ($1=="dp" && !($3 in seen)) { seen[$3]=1; edp = edp (edp==""?"":"/") $3 }
+    }
+    END {
+      for (i=1;i<=n;i++){ k=order[i]; s=c[k] "x " name[k]
+        if (grp[k]=="dp") dp = dp (dp==""?"":"; ") s
+        else              ot = ot (ot==""?"":"; ") s }
+      printf "%s|%s|%s", (dp==""?"none":dp), (ot==""?"none":ot), (edp==""?"none":edp)
+    }
+  ' <<<"${resolved}"
+}
+
+# ---------------------------------------------------------------------------
 # collect_node_info <ip>
 # ---------------------------------------------------------------------------
 collect_node_info(){
@@ -466,11 +503,14 @@ print_report(){
 
   # ---- CSV side-output (machine-readable) ----
   {
-    printf 'ip,hostname,nsx_version,manufacturer,model,service_tag,baseboard_serial,cpu_model,sockets,cores_per_socket,threads_per_core,total_vcpu,max_mhz,dmi_max_speed,verdict,error\n'
-    local ip
+    printf 'ip,hostname,nsx_version,manufacturer,model,service_tag,baseboard_serial,cpu_model,sockets,cores_per_socket,threads_per_core,total_vcpu,max_mhz,dmi_max_speed,datapath_nics,other_nics,edp_datapath,verdict,error\n'
+    local ip rollup dpn otn edpd
     for ip in "${HOST_IPS[@]}"; do
-      # CPU model is quoted (contains commas / parentheses).
-      printf '%s,%s,%s,%s,%s,%s,%s,"%s",%s,%s,%s,%s,%s,%s,%s,%s\n' \
+      # Per-server NIC summary (datapath | other | edp), digested for a spreadsheet.
+      rollup="$(_nic_rollup "${NODE_NICS[${ip}]:-}")"
+      IFS='|' read -r dpn otn edpd <<< "${rollup}"
+      # CPU model and the NIC summaries are quoted (may contain commas / parens).
+      printf '%s,%s,%s,%s,%s,%s,%s,"%s",%s,%s,%s,%s,%s,%s,"%s","%s",%s,%s,%s\n' \
         "${ip}" \
         "${NODE_HOSTNAME[${ip}]:-}" \
         "${NODE_VERSION_SHORT[${ip}]:-}" \
@@ -485,6 +525,9 @@ print_report(){
         "${NODE_CPU_TOTAL[${ip}]:-}" \
         "${NODE_CPU_MAXMHZ[${ip}]:-}" \
         "${NODE_CPU_DMISPEED[${ip}]:-}" \
+        "${dpn:-none}" \
+        "${otn:-none}" \
+        "${edpd:-none}" \
         "${NODE_VERDICT[${ip}]:-ERROR}" \
         "${NODE_ERROR[${ip}]:-}"
     done
