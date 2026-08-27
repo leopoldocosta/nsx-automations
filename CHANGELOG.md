@@ -8,6 +8,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`routing_model_audit` — is the NSX↔underlay boundary BGP or static route?**
+  (`automations/routing_model_audit/`). Read-only Policy API GETs (no SSH, no
+  PATCH), fan-out safe, unified report via `report_wrap`. Audits every **Tier-0**
+  (the only place NSX-T peers with the physical fabric) across all its
+  locale-services: BGP enabled + local AS, neighbors **configured** vs
+  **established** (runtime `bgp/neighbors/status`, best-effort), static-route
+  count, and whether a `0.0.0.0/0` default static route exists. Emits a per-Tier-0
+  verdict (**BGP / STATIC / MIXED / NONE**), a default-route origin column, and a
+  one-line **CONCLUSION** the pre-design checkpoint can quote directly (e.g. *"NO
+  BGP configured — the boundary is STATIC ROUTE on every Tier-0"*). Manager +
+  credential contract mirrors `lb_troubleshoot` (env/session creds, first manager
+  of the DC inventory when `--manager` is omitted); a read-only Auditor NSX user
+  is enough. Flags: `--manager`, `--tier0 <id|name>`, `--no-runtime`.
+- **Fleet-wide edge inventory as one importable CSV.** The verbose
+  `unified_report.txt` is fine for drill-down but unwieldy across 7 DCs, so
+  `edge_hardware_inventory`'s server CSV now carries a **per-server NIC digest** —
+  `datapath_nics` (the `vfio-pci`/DPDK NICs grouped as `<ports>x <name>`, e.g.
+  `4x Intel E810-XXV (2x25G SFP)`), `other_nics`, and `edp_datapath` (the datapath
+  EDP hint) — so one row per server already tells the NIC/EDP story. New
+  `bin/edge_fleet_csv.sh` merges every DC's server CSV from an `aggregated_logs`
+  run into a single `edge_fleet_servers.csv` with a leading `dc` column, ready to
+  import as a spreadsheet tab (or `VLOOKUP` by `service_tag`). Pure merge — it
+  never re-parses the big report.
 - **Live per-device progress during a fan-out.** `bin/run_across_datacenters.sh`
   used to redirect each DC's remote output straight to `run.log`, so a long
   per-device pass showed a black screen until the DC finished (e.g. ~100s for
