@@ -71,7 +71,8 @@ nsx-automations/
 │   ├── generate_reboot_plan.sh         # orchestrator: build reboot_plan.conf from the fleet (round-robin)
 │   ├── rolling_reboot_next.sh          # orchestrator: reboot ONE manager (next entry in reboot_plan.conf)
 │   ├── install_orchestrator_cron.sh    # install daily cron on the orchestrator
-│   └── uninstall_orchestrator_cron.sh  # remove daily cron (--purge-state also wipes state)
+│   ├── uninstall_orchestrator_cron.sh  # remove daily cron (--purge-state also wipes state)
+│   └── edge_fleet_csv.sh               # merge every DC's edge server CSV into one fleet-wide CSV
 │
 ├── automations/
 │   ├── apiuser_audit/             # audit a service account (apiuser) across all managers
@@ -80,7 +81,8 @@ nsx-automations/
 │   ├── edge_support_bundle/      # SB workflow (main + precheck + interactive CLI)
 │   ├── kb404700_disk_validation/ # detect root partition/overlay2 issues
 │   ├── lb_troubleshoot/          # native LB virtual-server/pool DOWN: diagnose + fix
-│   └── manager_rolling_reboot/   # multi-cluster monthly reboot
+│   ├── manager_rolling_reboot/   # multi-cluster monthly reboot
+│   └── routing_model_audit/      # is the NSX↔underlay boundary BGP or static route?
 │
 ├── docs/
 │   ├── MANUAL.md
@@ -116,6 +118,7 @@ nsx-automations/
 | `kb404700_disk_validation` | Edges | Check `/dev/sda2` + `overlay2` usage; flag nodes needing action |
 | `lb_troubleshoot` | Manager API + Edges | Diagnose a native LB VS/pool DOWN (id-namespace resolver, health-check classifier, guarded monitor fix) |
 | `manager_rolling_reboot` | Managers | Multi-cluster monthly rolling reboot (mitigates KB 396719) |
+| `routing_model_audit` | Manager API (read-only) | Audit every Tier-0: BGP enabled/neighbors vs static routes, default-route origin, and a per-Tier-0 BGP/STATIC/MIXED/NONE verdict |
 
 ## Quick start
 
