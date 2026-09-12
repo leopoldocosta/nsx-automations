@@ -69,6 +69,11 @@ vim managers.conf
 ## Run (single jump)
 
 ```bash
+# Rehearse the WHOLE reboot cycle locally (WSL/laptop) — NO NSX, no network.
+# Stubs ssh/tcp and ASSERTS the state machine, incl. the "still online => abort"
+# safety trap. Run this before any real reboot; green here ≠ the TODO #2 gate.
+bash sim_reboot_wsl.sh
+
 # Validate a single host (always safe to repeat)
 ./test_reboot_single.sh 192.168.20.10
 

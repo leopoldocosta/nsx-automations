@@ -4,6 +4,9 @@ All pending deliverables — operational AND code — tracked here so they
 survive sessions and operators. Remove items when done (git history keeps
 the record).
 
+> **Handoff de sessão ativo:** `docs/SESSION-HANDOFF.md` — estado vivo da
+> reautomatização do rolling reboot (gate #2 abaixo ainda aberto).
+
 Suggested order: **2 → 3 → 0 → rollout → 5 → 1 → 4 → 6** (item 2 blocks
 enabling the production reboot cron; item 0 comes before mass rollout;
 item 6 is best done BEFORE writing the 7-DC datacenters.conf — less to edit).

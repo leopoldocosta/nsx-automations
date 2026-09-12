@@ -54,7 +54,7 @@ setup() {
 # purpose — they legitimately reference scripts that do not exist on disk.
 @test "no current-state doc references a non-existent bin/ script" {
   local bad=() ref files=()
-  files+=( "${REPO_ROOT}/README.md" "${REPO_ROOT}/CLAUDE.md" "${REPO_ROOT}/CONTRIBUTING.md" )
+  files+=( "${REPO_ROOT}/README.md" "${REPO_ROOT}/AGENTS.md" "${REPO_ROOT}/CONTRIBUTING.md" )
   files+=( "${REPO_ROOT}"/docs/*.md )
   files+=( "${REPO_ROOT}"/automations/*/README.md )
   while IFS= read -r ref; do

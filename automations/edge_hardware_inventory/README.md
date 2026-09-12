@@ -83,13 +83,32 @@ orchestrator terminal (prefixed with the DC label); the full log still lands in
   and nodes needing attention
 - `logs/edge_hw_report_YYYYMMDD_HHMMSS.csv`  — machine-readable inventory
   (one row per node):
-  `ip,hostname,nsx_version,manufacturer,model,service_tag,baseboard_serial,cpu_model,sockets,cores_per_socket,threads_per_core,total_vcpu,max_mhz,dmi_max_speed,verdict,error`
+  `ip,hostname,nsx_version,manufacturer,model,service_tag,baseboard_serial,cpu_model,sockets,cores_per_socket,threads_per_core,total_vcpu,max_mhz,dmi_max_speed,datapath_nics,other_nics,edp_datapath,verdict,error`.
+  The three NIC columns are a **per-server digest** of the NIC inventory —
+  `datapath_nics` groups the `vfio-pci` (DPDK fastpath) NICs as `<ports>x <name>`
+  (e.g. `4x Intel E810-XXV (2x25G SFP)`), `other_nics` the rest, and
+  `edp_datapath` the EDP hint of the datapath NICs — so this one CSV is
+  spreadsheet-ready without touching the per-NIC file below
 - `logs/edge_nic_report_YYYYMMDD_HHMMSS.csv`  — NIC inventory, **one row per
   NIC**: `ip,hostname,pci_addr,pci_id,model,friendly,edp_hint,driver,subsystem`
   (`friendly` + `edp_hint` come from the local chipset table — see *NICs / EDP*)
 - `logs/edge_cpu_raw_<hostname>.txt`          — per-node full `lscpu`,
   grepped `dmidecode -t processor`, and full `lspci -nnk` dump, for reference /
   debugging
+
+## Fleet view (spreadsheet)
+
+The per-DC unified report is great for drill-down but unwieldy across 7 DCs. To
+get one **fleet table** instead, run — on the orchestrator, after a fan-out —
+
+```bash
+./bin/edge_fleet_csv.sh            # newest aggregated_logs/<ts>/ (or pass a run dir)
+```
+
+It merges each DC's `edge_hw_report_*.csv` (already one row per server, NIC data
+digested) into `aggregated_logs/<ts>/edge_fleet_servers.csv` with a leading `dc`
+column — import it as a new spreadsheet tab, or `VLOOKUP` it by `service_tag`
+into an existing servers sheet. Pure merge; it never re-parses the big report.
 
 ## NICs / EDP
 
